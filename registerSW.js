@@ -1,0 +1,1 @@
+if('serviceWorker' in navigator) {window.addEventListener('load', () => {navigator.serviceWorker.register('/linguago-pwa/sw.js', { scope: '/linguago-pwa/' })})}
