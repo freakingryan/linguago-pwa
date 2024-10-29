@@ -1,0 +1,17 @@
+linguago-pwa/
+├── public/
+│   ├── manifest.json
+│   ├── service-worker.js
+│   └── icons/
+├── src/
+│   ├── components/
+│   │   ├── common/
+│   │   ├── layout/
+│   │   └── features/
+│   ├── hooks/
+│   ├── pages/
+│   ├── services/
+│   ├── store/
+│   ├── types/
+│   ├── utils/
+│   └── styles/ 
