@@ -11,7 +11,7 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
 // 注册 Service Worker
 if ('serviceWorker' in navigator) {
     window.addEventListener('load', () => {
-        navigator.serviceWorker.register('/service-worker.js').then(
+        navigator.serviceWorker.register('/linguago-pwa/service-worker.js').then(
             (registration) => {
                 console.log('ServiceWorker registration successful');
             },
