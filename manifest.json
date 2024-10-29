@@ -1,7 +1,7 @@
 {
     "name": "LinguaGo",
     "short_name": "LinguaGo",
-    "start_url": ".",
+    "start_url": "/linguago-pwa/",
     "display": "standalone",
     "background_color": "#ffffff",
     "theme_color": "#000000",
