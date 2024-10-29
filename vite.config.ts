@@ -4,6 +4,7 @@ import { VitePWA } from 'vite-plugin-pwa'
 
 // https://vite.dev/config/
 export default defineConfig({
+  base: '/linguago-pwa/',
   plugins: [react(), VitePWA({
     registerType: 'autoUpdate',
     includeAssets: ['favicon.ico', 'apple-touch-icon.png', 'mask-icon.svg'],
@@ -12,6 +13,7 @@ export default defineConfig({
       short_name: 'LinguaGo',
       description: 'AI驱动的语言学习助手',
       theme_color: '#ffffff',
+      start_url: '/linguago-pwa/',
       icons: [
         {
           src: 'icons/icon-192x192.png',
@@ -29,7 +31,7 @@ export default defineConfig({
       cleanupOutdatedCaches: true,
       runtimeCaching: [
         {
-          urlPattern: /^https:\/\/api\.openai\.com\/.*/i,
+          urlPattern: /^https:\/\/api\.chatanywhere\.tech\/.*/i,
           handler: 'NetworkFirst',
           options: {
             cacheName: 'api-cache',
