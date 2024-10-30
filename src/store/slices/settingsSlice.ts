@@ -11,7 +11,7 @@ interface SettingsState {
 const initialState: SettingsState = {
     apiKey: localStorage.getItem('apiKey') || '',
     apiUrl: localStorage.getItem('apiUrl') || 'https://api.chatanywhere.tech/v1',
-    model: localStorage.getItem('model') || 'gpt-3.5-turbo',
+    model: localStorage.getItem('model') || 'gpt-4o-mini',
     language: 'zh',
     theme: (localStorage.getItem('theme') as 'light' | 'dark') || 'light',
 };
