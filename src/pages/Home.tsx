@@ -1,7 +1,12 @@
-import { useState } from 'react';
-import { useSelector } from 'react-redux';
+import { useState, useMemo } from 'react';
+import { useSelector, useDispatch } from 'react-redux';
 import { RootState } from '../store';
 import { chatService } from '../services/api';
+import { SpeechRecognitionService } from '../services/speechRecognition';
+import { TextToSpeechService } from '../services/textToSpeech';
+import { addRecord } from '../store/slices/historySlice';
+import { v4 as uuidv4 } from 'uuid';
+import Toast from '../components/common/Toast';
 
 const COMMON_LANGUAGES = [
     { code: 'en', name: '英语' },
@@ -14,6 +19,13 @@ const COMMON_LANGUAGES = [
     { code: 'ru', name: '俄语' },
 ];
 
+// 添加 toast 状态
+interface ToastState {
+    show: boolean;
+    message: string;
+    type: 'success' | 'error' | 'info';
+}
+
 const Home = () => {
     const [sourceText, setSourceText] = useState('');
     const [targetLanguage, setTargetLanguage] = useState('en');
@@ -21,8 +33,21 @@ const Home = () => {
     const [translation, setTranslation] = useState('');
     const [isLoading, setIsLoading] = useState(false);
     const [error, setError] = useState('');
+    const [isListening, setIsListening] = useState(false);
+    const [sourceLanguage, setSourceLanguage] = useState('zh');
+    const [voiceError, setVoiceError] = useState<string>('');
+    const [toast, setToast] = useState<ToastState>({
+        show: false,
+        message: '',
+        type: 'info'
+    });
 
     const { apiKey, apiUrl, model } = useSelector((state: RootState) => state.settings);
+
+    const speechRecognition = useMemo(() => new SpeechRecognitionService(), []);
+    const textToSpeech = useMemo(() => new TextToSpeechService(), []);
+
+    const dispatch = useDispatch();
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -39,7 +64,17 @@ const Home = () => {
             const prompt = `请将以下文本翻译成${targetLang}：\n\n${sourceText}\n\n只需要返回翻译结果，不需要任何解释或额外的文本。`;
 
             const result = await chatService.sendMessage(prompt);
-            setTranslation(result.choices[0].message.content.trim());
+            const translatedText = result.choices[0].message.content.trim();
+            setTranslation(translatedText);
+
+            dispatch(addRecord({
+                id: uuidv4(),
+                sourceText,
+                translatedText,
+                sourceLang: 'auto',
+                targetLang: targetLanguage || customLanguage,
+                timestamp: Date.now(),
+            }));
         } catch (error: any) {
             console.error('Translation error:', error);
             setError(error.response?.data?.error?.message || '翻译失败，请稍后重试');
@@ -48,22 +83,88 @@ const Home = () => {
         }
     };
 
+    // 显示 toast 的辅助函数
+    const showToast = (message: string, type: ToastState['type'] = 'info') => {
+        setToast({ show: true, message, type });
+    };
+
+    // 修改语音输入处理函数
+    const handleVoiceInput = async () => {
+        try {
+            setIsListening(true);
+            const transcript = await speechRecognition.startListening();
+            setSourceText(transcript);
+            showToast('语音识别成功', 'success');
+        } catch (error) {
+            console.error('Speech recognition error:', error);
+            showToast(typeof error === 'string' ? error : '语音识别失败', 'error');
+        } finally {
+            setIsListening(false);
+        }
+    };
+
+    const handleSpeak = (text: string, language: string) => {
+        textToSpeech.speak(text, language);
+    };
+
     return (
         <div className="max-w-2xl mx-auto space-y-6">
+            {/* 添加 Toast 组件 */}
+            {toast.show && (
+                <Toast
+                    message={toast.message}
+                    type={toast.type}
+                    onClose={() => setToast({ ...toast, show: false })}
+                />
+            )}
+
             <form onSubmit={handleSubmit} className="space-y-4">
                 {/* 源文本输入 */}
                 <div>
                     <label className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">
                         输入要翻译的文本
                     </label>
-                    <textarea
-                        value={sourceText}
-                        onChange={(e) => setSourceText(e.target.value)}
-                        className="w-full p-3 border rounded-md dark:bg-gray-700 dark:border-gray-600 dark:text-white"
-                        placeholder="请输入任何语言的文本..."
-                        rows={4}
-                        required
-                    />
+                    <div className="relative">
+                        <textarea
+                            value={sourceText}
+                            onChange={(e) => setSourceText(e.target.value)}
+                            className="w-full p-3 border rounded-md dark:bg-gray-700 dark:border-gray-600 dark:text-white pr-12"
+                            placeholder="请输入任何语言的文本..."
+                            rows={4}
+                            required
+                        />
+                        {/* 语音输入按钮移到右下角 */}
+                        <button
+                            type="button"
+                            onClick={handleVoiceInput}
+                            disabled={isListening}
+                            className="absolute right-2 bottom-2 p-2 rounded-full hover:bg-gray-100 dark:hover:bg-gray-600 transition-colors"
+                            title="语音输入"
+                        >
+                            {isListening ? (
+                                <svg className="w-6 h-6 text-blue-500 animate-pulse" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                                        d="M12 18.5a6.5 6.5 0 006.5-6.5V8.5a6.5 6.5 0 00-13 0V12a6.5 6.5 0 006.5 6.5z"
+                                    />
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                                        d="M16 12a4 4 0 01-8 0V8a4 4 0 118 0v4z"
+                                    />
+                                </svg>
+                            ) : (
+                                <svg className="w-6 h-6 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                                        d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z"
+                                    />
+                                </svg>
+                            )}
+                        </button>
+                        {/* 错误提示放在输入框下方 */}
+                        {voiceError && (
+                            <div className="text-sm text-red-600 dark:text-red-400 mt-1">
+                                {voiceError}
+                            </div>
+                        )}
+                    </div>
                 </div>
 
                 {/* 目标语言选择 */}
@@ -81,8 +182,8 @@ const Home = () => {
                                     setCustomLanguage('');
                                 }}
                                 className={`px-3 py-2 rounded-md text-sm ${targetLanguage === lang.code && !customLanguage
-                                        ? 'bg-blue-600 text-white'
-                                        : 'bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-200'
+                                    ? 'bg-blue-600 text-white'
+                                    : 'bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-200'
                                     }`}
                             >
                                 {lang.name}
@@ -130,7 +231,33 @@ const Home = () => {
             {/* 翻译结果 */}
             {translation && (
                 <div className="p-4 bg-white dark:bg-gray-800 rounded-lg shadow">
-                    <h3 className="font-bold mb-2 text-gray-900 dark:text-white">翻译结果：</h3>
+                    <div className="flex justify-between items-start mb-2">
+                        <h3 className="font-bold text-gray-900 dark:text-white">翻译结果：</h3>
+                        <div className="flex gap-2">
+                            <button
+                                onClick={() => handleSpeak(translation, targetLanguage)}
+                                className="p-2 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+                                title="朗读翻译结果"
+                            >
+                                <svg className="w-5 h-5 text-gray-600 dark:text-gray-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                                        d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z"
+                                    />
+                                </svg>
+                            </button>
+                            <button
+                                onClick={() => navigator.clipboard.writeText(translation)}
+                                className="p-2 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+                                title="复制翻译结果"
+                            >
+                                <svg className="w-5 h-5 text-gray-600 dark:text-gray-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                                        d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"
+                                    />
+                                </svg>
+                            </button>
+                        </div>
+                    </div>
                     <p className="text-gray-700 dark:text-gray-200 whitespace-pre-wrap">
                         {translation}
                     </p>
