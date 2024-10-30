@@ -65,26 +65,35 @@ npm run build
 
 ### 翻译功能
 
-1. 在主页输入要翻译的文本
+1. 在主页输入要翻译的文本或使用语音输入（目前支持英语）
 2. 选择目标语言（支持常用语言快速选择和自定义语言输入）
 3. 点击"翻译"按钮获取结果
+4. 可以使用朗读功能听取翻译结果
+5. 所有翻译记录都会保存在历史记录中
+
+## 浏览器支持
+
+- Chrome (推荐)
+- Edge
+- Safari
+- Firefox
+
+注意：语音识别功能目前仅支持英语输入，并且需要浏览器支持 Web Speech API。
 
 ## 项目结构
 
 linguago-pwa/
 ├── public/ # 静态资源
 │ ├── manifest.json
-│ ├── service-worker.js
-│ └── icons/
+│ └── service-worker.js
 ├── src/
 │ ├── components/ # React 组件
-│ │ ├── common/ # 通用组件
-│ │ └── layout/ # 布局组件
 │ ├── pages/ # 页面组件
 │ ├── services/ # API 服务
 │ ├── store/ # Redux store
-│ ├── types/ # TypeScript 类型
-│ └── styles/ # 样式文件
+│ ├── styles/ # 样式文件
+│ └── types/ # TypeScript 类型
+
 
 
 ## 部署说明
