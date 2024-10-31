@@ -1,12 +1,12 @@
 import { useState, useMemo } from 'react';
 import { useSelector, useDispatch } from 'react-redux';
 import { RootState } from '../store';
-import { chatService } from '../services/api';
-import { SpeechRecognitionService } from '../services/speechRecognition';
 import { TextToSpeechService } from '../services/textToSpeech';
 import { addRecord } from '../store/slices/historySlice';
 import { v4 as uuidv4 } from 'uuid';
 import Toast from '../components/common/Toast';
+import { AudioRecorderService } from '../services/audioRecorder';
+import { GeminiApiService } from '../services/geminiApi';
 
 const COMMON_LANGUAGES = [
     { code: 'en', name: '英语' },
@@ -32,22 +32,22 @@ const Home = () => {
     const [customLanguage, setCustomLanguage] = useState('');
     const [translation, setTranslation] = useState('');
     const [isLoading, setIsLoading] = useState(false);
-    const [error, setError] = useState('');
     const [isListening, setIsListening] = useState(false);
-    const [sourceLanguage, setSourceLanguage] = useState('zh');
-    const [voiceError, setVoiceError] = useState<string>('');
+    const [isRecording, setIsRecording] = useState(false);
+    const [isProcessing, setIsProcessing] = useState(false);
+    const audioRecorder = useMemo(() => new AudioRecorderService(), []);
+    const { apiKey, modelType } = useSelector((state: RootState) => state.settings);
+    const geminiApi = useMemo(() => new GeminiApiService(apiKey), [apiKey]);
+
+    const textToSpeech = useMemo(() => new TextToSpeechService(), []);
+
+    const dispatch = useDispatch();
+
     const [toast, setToast] = useState<ToastState>({
         show: false,
         message: '',
         type: 'info'
     });
-
-    const { apiKey, apiUrl, model } = useSelector((state: RootState) => state.settings);
-
-    const speechRecognition = useMemo(() => new SpeechRecognitionService(), []);
-    const textToSpeech = useMemo(() => new TextToSpeechService(), []);
-
-    const dispatch = useDispatch();
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -58,13 +58,13 @@ const Home = () => {
             targetLanguage;
 
         setIsLoading(true);
-        setError('');
 
         try {
-            const prompt = `请将以下文本翻译成${targetLang}：\n\n${sourceText}\n\n只需要返回翻译结果，不需要任何解释或额外的文本。`;
+            const prompt = `Please translate the following text to ${targetLang}. Only provide the translation without any additional explanation or text:
 
-            const result = await chatService.sendMessage(prompt);
-            const translatedText = result.choices[0].message.content.trim();
+${sourceText}`;
+
+            const translatedText = await geminiApi.generateText(prompt);
             setTranslation(translatedText);
 
             dispatch(addRecord({
@@ -77,7 +77,6 @@ const Home = () => {
             }));
         } catch (error: any) {
             console.error('Translation error:', error);
-            setError(error.response?.data?.error?.message || '翻译失败，请稍后重试');
         } finally {
             setIsLoading(false);
         }
@@ -90,21 +89,59 @@ const Home = () => {
 
     // 修改语音输入处理函数
     const handleVoiceInput = async () => {
+        if (isProcessing) return;
+
         try {
-            setIsListening(true);
-            const transcript = await speechRecognition.startListening();
-            setSourceText(transcript);
-            showToast('语音识别成功', 'success');
+            if (!isRecording) {
+                await audioRecorder.startRecording();
+                setIsRecording(true);
+                showToast('开始录音...', 'info');
+            } else {
+                setIsRecording(false);
+                setIsProcessing(true);
+                showToast('正在处理录音...', 'info');
+
+                const audioBlob = await audioRecorder.stopRecording();
+                const text = await geminiApi.uploadAudio(audioBlob);
+                setSourceText(text);
+                showToast('录音处理完成', 'success');
+            }
         } catch (error) {
-            console.error('Speech recognition error:', error);
-            showToast(typeof error === 'string' ? error : '语音识别失败', 'error');
+            console.error('Voice input error:', error);
+            showToast(error instanceof Error ? error.message : '录音处理失败', 'error');
         } finally {
-            setIsListening(false);
+            setIsProcessing(false);
         }
     };
 
     const handleSpeak = (text: string, language: string) => {
         textToSpeech.speak(text, language);
+    };
+
+    // 修改录音按钮的图标
+    const renderMicrophoneIcon = () => {
+        if (isProcessing) {
+            return (
+                <svg className="w-6 h-6 text-blue-500 animate-spin" fill="none" viewBox="0 0 24 24">
+                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
+                </svg>
+            );
+        }
+        if (isRecording) {
+            return (
+                <svg className="w-6 h-6 text-red-500 animate-pulse" fill="currentColor" viewBox="0 0 24 24">
+                    <circle cx="12" cy="12" r="6" />
+                </svg>
+            );
+        }
+        return (
+            <svg className="w-6 h-6 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                    d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z"
+                />
+            </svg>
+        );
     };
 
     return (
@@ -137,33 +174,12 @@ const Home = () => {
                         <button
                             type="button"
                             onClick={handleVoiceInput}
-                            disabled={isListening}
+                            disabled={isProcessing}
                             className="absolute right-2 bottom-2 p-2 rounded-full hover:bg-gray-100 dark:hover:bg-gray-600 transition-colors"
-                            title="语音输入"
+                            title={isRecording ? '点击停止录音' : '点击开始录音'}
                         >
-                            {isListening ? (
-                                <svg className="w-6 h-6 text-blue-500 animate-pulse" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-                                        d="M12 18.5a6.5 6.5 0 006.5-6.5V8.5a6.5 6.5 0 00-13 0V12a6.5 6.5 0 006.5 6.5z"
-                                    />
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-                                        d="M16 12a4 4 0 01-8 0V8a4 4 0 118 0v4z"
-                                    />
-                                </svg>
-                            ) : (
-                                <svg className="w-6 h-6 text-gray-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-                                        d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z"
-                                    />
-                                </svg>
-                            )}
+                            {renderMicrophoneIcon()}
                         </button>
-                        {/* 错误提示放在输入框下方 */}
-                        {voiceError && (
-                            <div className="text-sm text-red-600 dark:text-red-400 mt-1">
-                                {voiceError}
-                            </div>
-                        )}
                     </div>
                 </div>
 
@@ -218,13 +234,6 @@ const Home = () => {
             {!apiKey && (
                 <div className="p-4 bg-yellow-100 dark:bg-yellow-800 rounded-md text-yellow-800 dark:text-yellow-100">
                     请先在设置页面配置 API Key
-                </div>
-            )}
-
-            {/* 错误提示 */}
-            {error && (
-                <div className="p-4 bg-red-100 dark:bg-red-800 rounded-md text-red-800 dark:text-red-100">
-                    {error}
                 </div>
             )}
 
