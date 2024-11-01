@@ -108,13 +108,18 @@ export class UnifiedApiService {
                         contents: [{
                             parts: [
                                 {
-                                    text: `Please transcribe the following audio content. 
+                                    text: `Please transcribe the following audio content and format it as proper text.
                                     Rules:
-                                    1. Remove any background noise, filler words (um, uh, etc.), and repetitions
-                                    2. Only include meaningful and coherent text
-                                    3. Format the text in a clear and readable way
-                                    4. Return only the transcribed text without any additional explanation or notes
-                                    5. If the audio is mostly noise or unclear, return "无法识别有效语音内容"`
+                                    1. Remove all background noise, filler words, and unnecessary spaces
+                                    2. Remove any timestamps or numbers that don't belong to the actual content
+                                    3. Format the text following proper grammar and punctuation rules
+                                    4. Ensure the output is well-structured and logically coherent
+                                    5. If the content is unclear or nonsensical, respond with "无法识别有效语音内容"
+                                    6. Keep only meaningful content that forms complete sentences
+                                    7. Maintain the original meaning while improving clarity
+                                    8. Use proper capitalization and punctuation
+                                    9. Remove any repeated words or phrases
+                                    10. Ensure the output reads like natural, written text`
                                 },
                                 {
                                     inline_data: {
@@ -128,7 +133,6 @@ export class UnifiedApiService {
                 );
                 return response.data.candidates[0].content.parts[0].text;
             } else {
-                // OpenAI Whisper API 或其他音频处理 API
                 throw new Error('当前 API 不支持音频处理');
             }
         } catch (error: any) {

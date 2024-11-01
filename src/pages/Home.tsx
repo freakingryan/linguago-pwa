@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useRef, useEffect } from 'react';
 import { useSelector, useDispatch } from 'react-redux';
 import { RootState } from '../store';
 import { TextToSpeechService } from '../services/textToSpeech';
@@ -8,6 +8,7 @@ import Toast from '../components/common/Toast';
 import { AudioRecorderService } from '../services/audioRecorder';
 import { UnifiedApiService } from '../services/api';
 import { useToast } from '../hooks/useToast';
+import RecordingOverlay from '../components/common/RecordingOverlay';
 
 const COMMON_LANGUAGES = [
     { code: 'en', name: '英语' },
@@ -38,6 +39,10 @@ const Home = () => {
 
     // 使用 useToast hook
     const { toast, showToast, hideToast } = useToast();
+
+    // 添加录音时长状态
+    const [recordingDuration, setRecordingDuration] = useState(0);
+    const recordingTimer = useRef<NodeJS.Timeout | null>(null);
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -82,15 +87,28 @@ ${sourceText}`;
                 await audioRecorder.startRecording();
                 setIsRecording(true);
                 showToast('开始录音...', 'info');
+
+                // 开始计时
+                setRecordingDuration(0);
+                recordingTimer.current = setInterval(() => {
+                    setRecordingDuration(prev => prev + 1);
+                }, 1000);
             } else {
                 setIsRecording(false);
                 setIsProcessing(true);
                 showToast('正在处理录音...', 'info');
 
+                // 停止计时
+                if (recordingTimer.current) {
+                    clearInterval(recordingTimer.current);
+                    recordingTimer.current = null;
+                }
+
                 const audioBlob = await audioRecorder.stopRecording();
                 const text = await apiService.processAudio(audioBlob);
                 setSourceText(text);
                 showToast('录音处理完成', 'success');
+                setRecordingDuration(0);
             }
         } catch (error) {
             console.error('Voice input error:', error);
@@ -99,6 +117,15 @@ ${sourceText}`;
             setIsProcessing(false);
         }
     };
+
+    // 在组件卸载时清理计时器
+    useEffect(() => {
+        return () => {
+            if (recordingTimer.current) {
+                clearInterval(recordingTimer.current);
+            }
+        };
+    }, []);
 
     const handleSpeak = (text: string, language: string) => {
         textToSpeech.speak(text, language);
@@ -132,6 +159,11 @@ ${sourceText}`;
 
     return (
         <div className="max-w-2xl mx-auto space-y-6">
+            <RecordingOverlay
+                isRecording={isRecording}
+                duration={recordingDuration}
+                onStop={handleVoiceInput}
+            />
             {/* 添加 Toast 组件 */}
             {toast.show && (
                 <Toast
