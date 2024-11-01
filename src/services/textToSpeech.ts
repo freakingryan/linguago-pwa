@@ -19,68 +19,121 @@ export class TextToSpeechService {
         }
     }
 
-    speak(text: string, language: string) {
-        if (!this.synthesis) {
-            console.warn('当前设备不支持语音合成');
-            return;
-        }
+    speak = async (text: string, lang: string = 'en') => {
+        // 在 try 块外部定义 fullLangCode，这样 catch 块也能访问到
+        const fullLangCode = this.getFullLanguageCode(lang);
 
-        // 停止当前正在播放的语音
-        this.synthesis.cancel();
-
-        const utterance = new SpeechSynthesisUtterance(text);
-        const langCode = this.languageMap[language] || language;
-        utterance.lang = langCode;
-
-        // 获取可用的语音
-        const voices = this.synthesis.getVoices();
-
-        // 针对移动设备优化语音选择
-        const voice = this.findBestVoice(voices, langCode);
-        if (voice) {
-            utterance.voice = voice;
-        }
-
-        // 针对移动设备优化语音参数
-        if (this.isMobileDevice()) {
-            utterance.rate = 0.9;    // 稍微降低语速
-            utterance.pitch = 1.0;   // 保持正常音调
-            utterance.volume = 1.0;  // 最大音量
-        } else {
-            utterance.rate = 1.0;
-            utterance.pitch = 1.0;
-            utterance.volume = 1.0;
-        }
-
-        // 添加事件处理
-        utterance.onstart = () => {
-            console.log('开始播放语音');
-        };
-
-        utterance.onend = () => {
-            console.log('语音播放结束');
-        };
-
-        utterance.onerror = (event) => {
-            console.error('语音合成错误:', event);
-            // 尝试使用备用语音
-            if (event.error === 'synthesis-failed' && voices.length > 1) {
-                const fallbackVoice = voices.find(v => v !== utterance.voice && v.lang.startsWith(langCode.split('-')[0]));
-                if (fallbackVoice) {
-                    utterance.voice = fallbackVoice;
-                    this.synthesis.speak(utterance);
-                }
+        try {
+            // iOS 设备特殊处理
+            if (this.isIOSDevice()) {
+                return this.speakOnIOS(text, fullLangCode);
             }
-        };
 
-        // 在 iOS 设备上特殊处理
-        if (this.isIOSDevice()) {
-            // iOS 需要用户交互后才能播放语音
-            this.synthesis.speak(utterance);
-        } else {
-            // 其他设备正常播放
-            this.synthesis.speak(utterance);
+            // 检查浏览器支持
+            if (!('speechSynthesis' in window)) {
+                return this.fallbackSpeak(text, fullLangCode);
+            }
+
+            // 确保语音已加载（iOS 特别需要）
+            await this.preloadVoices();
+
+            // Web Speech API 实现
+            const utterance = new SpeechSynthesisUtterance(text);
+            utterance.lang = fullLangCode;
+
+            // 选择最佳语音
+            const voices = this.synthesis.getVoices();
+            const bestVoice = this.findBestVoice(voices, fullLangCode);
+            if (bestVoice) {
+                utterance.voice = bestVoice;
+            }
+
+            // iOS Safari 的特殊处理
+            if (this.isIOSDevice()) {
+                this.synthesis.cancel(); // 防止重复播放
+            }
+
+            return new Promise((resolve, reject) => {
+                utterance.onend = () => {
+                    this.synthesis.cancel(); // 清理
+                    resolve(undefined);
+                };
+                utterance.onerror = (event) => {
+                    console.error('语音合成错误:', event);
+                    this.fallbackSpeak(text, fullLangCode).then(resolve).catch(reject);
+                };
+                this.synthesis.speak(utterance);
+            });
+        } catch (error) {
+            console.error('语音合成错误:', error);
+            return this.fallbackSpeak(text, fullLangCode);
         }
+    };
+
+    // iOS 设备的特殊处理
+    private async speakOnIOS(text: string, lang: string): Promise<void> {
+        try {
+            const utterance = new SpeechSynthesisUtterance(text);
+            utterance.lang = lang;  // 使用转换后的语言代码
+
+            // iOS 需要用户交互才能播放
+            return new Promise((resolve, reject) => {
+                utterance.onend = () => {
+                    this.synthesis.cancel();
+                    resolve();
+                };
+                utterance.onerror = () => {
+                    // 如果失败，使用回退方案
+                    this.fallbackSpeak(text, lang).then(resolve).catch(reject);
+                };
+
+                // iOS Safari 特殊处理
+                this.synthesis.cancel(); // 清除之前的语音队列
+                setTimeout(() => {
+                    this.synthesis.speak(utterance);
+                }, 100);
+            });
+        } catch (error) {
+            return this.fallbackSpeak(text, lang);
+        }
+    }
+
+    // 回退方案：使用音频 API
+    private fallbackSpeak(text: string, lang: string): Promise<void> {
+        return new Promise((resolve, reject) => {
+            // 使用 Google TTS API 作为备选
+            const url = `https://translate.google.com/translate_tts?ie=UTF-8&q=${encodeURIComponent(text)}&tl=${lang}&client=tw-ob`;
+            const audio = new Audio();
+
+            // iOS Safari 需要这些设置
+            audio.autoplay = true;
+            audio.crossOrigin = "anonymous";
+            audio.src = url;
+
+            const playHandler = () => {
+                audio.play().catch(error => {
+                    console.error('播放失败:', error);
+                    if (error.name === 'NotAllowedError') {
+                        // 需要用户交互，可以在这里触发 UI 提示
+                        console.log('需要用户交互才能播放音频');
+                    }
+                });
+            };
+
+            audio.onended = () => resolve();
+            audio.onerror = (e) => {
+                console.error('音频加载失败:', e);
+                reject(e);
+            };
+
+            // iOS Safari 特殊处理
+            if (this.isIOSDevice()) {
+                audio.load(); // 预加载音频
+                document.addEventListener('touchend', playHandler, { once: true });
+            } else {
+                playHandler();
+            }
+        });
     }
 
     stop() {
@@ -109,7 +162,8 @@ export class TextToSpeechService {
 
     // 检查是否为 iOS 设备
     private isIOSDevice(): boolean {
-        return /iPhone|iPad|iPod/i.test(navigator.userAgent);
+        return /iPhone|iPad|iPod/i.test(navigator.userAgent) ||
+            (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
     }
 
     // 为特定语言找到最佳语音
@@ -128,5 +182,10 @@ export class TextToSpeechService {
 
         // 如果都没有找到，返回第一个可用的语音
         return voices[0] || null;
+    }
+
+    // 添加一个获取完整语言代码的辅助方法
+    private getFullLanguageCode(lang: string): string {
+        return this.languageMap[lang] || lang;
     }
 } 
