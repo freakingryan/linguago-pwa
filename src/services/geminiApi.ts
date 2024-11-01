@@ -91,7 +91,13 @@ export class GeminiApiService {
                     contents: [{
                         parts: [
                             {
-                                text: "Please transcribe the following audio content. Return only the transcribed text without any additional explanation."
+                                text: `Please transcribe the following audio content. 
+                                Rules:
+                                1. Remove any background noise, filler words (um, uh, etc.), and repetitions
+                                2. Only include meaningful and coherent text
+                                3. Format the text in a clear and readable way
+                                4. Return only the transcribed text without any additional explanation or notes
+                                5. If the audio is mostly noise or unclear, return "无法识别有效语音内容"`
                             },
                             {
                                 inline_data: {

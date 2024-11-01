@@ -3,6 +3,8 @@ import { useDispatch, useSelector } from 'react-redux';
 import { RootState } from '../store';
 import { setApiKey, setApiUrl, setModel, setTheme, setModelType } from '../store/slices/settingsSlice';
 import axios from 'axios';
+import Toast from '../components/common/Toast';
+import { ToastState } from '../types/toast';
 
 const Settings = () => {
     const dispatch = useDispatch();
@@ -16,6 +18,16 @@ const Settings = () => {
     });
     const [testStatus, setTestStatus] = useState<'idle' | 'testing' | 'success' | 'error'>('idle');
     const [errorMessage, setErrorMessage] = useState('');
+
+    const [toast, setToast] = useState<ToastState>({
+        show: false,
+        message: '',
+        type: 'info'
+    });
+
+    const showToast = (message: string, type: ToastState['type'] = 'info') => {
+        setToast({ show: true, message, type });
+    };
 
     const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
         const { name, value } = e.target;
@@ -31,15 +43,14 @@ const Settings = () => {
 
         try {
             if (tempSettings.modelType === 'gemini') {
-                // 测试 Gemini API
                 const response = await axios.get(
                     `https://generativelanguage.googleapis.com/v1beta/models?key=${tempSettings.apiKey}`
                 );
                 if (response.status === 200) {
                     setTestStatus('success');
+                    showToast('API 连接测试成功！', 'success');
                 }
             } else {
-                // 测试 OpenAI API
                 const response = await axios.post(
                     `${tempSettings.apiUrl}/chat/completions`,
                     {
@@ -56,16 +67,20 @@ const Settings = () => {
                 );
                 if (response.status === 200) {
                     setTestStatus('success');
+                    showToast('API 连接测试成功！', 'success');
                 }
             }
         } catch (error: any) {
             setTestStatus('error');
-            setErrorMessage(error.response?.data?.error?.message || '连接测试失败，请检查配置');
+            const errorMsg = error.response?.data?.error?.message || '连接测试失败，请检查配置';
+            setErrorMessage(errorMsg);
+            showToast(errorMsg, 'error');
         }
     };
 
     const saveSettings = () => {
         if (testStatus !== 'success') {
+            showToast('请先测试连接', 'error');
             return;
         }
 
@@ -75,6 +90,7 @@ const Settings = () => {
             dispatch(setApiUrl(tempSettings.apiUrl));
             dispatch(setModel(tempSettings.model));
         }
+        showToast('设置保存成功！', 'success');
     };
 
     const handleThemeChange = (newTheme: 'light' | 'dark') => {
@@ -84,6 +100,14 @@ const Settings = () => {
 
     return (
         <div className="max-w-2xl mx-auto space-y-6">
+            {toast.show && (
+                <Toast
+                    message={toast.message}
+                    type={toast.type}
+                    onClose={() => setToast({ ...toast, show: false })}
+                />
+            )}
+
             <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow">
                 <h2 className="text-xl font-bold mb-4 dark:text-white">AI 模型设置</h2>
 

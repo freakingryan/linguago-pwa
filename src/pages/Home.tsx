@@ -7,6 +7,7 @@ import { v4 as uuidv4 } from 'uuid';
 import Toast from '../components/common/Toast';
 import { AudioRecorderService } from '../services/audioRecorder';
 import { GeminiApiService } from '../services/geminiApi';
+import { ToastState } from '../types/toast';  // 添加 ToastState 类型导入
 
 const COMMON_LANGUAGES = [
     { code: 'en', name: '英语' },
@@ -18,13 +19,6 @@ const COMMON_LANGUAGES = [
     { code: 'es', name: '西班牙语' },
     { code: 'ru', name: '俄语' },
 ];
-
-// 添加 toast 状态
-interface ToastState {
-    show: boolean;
-    message: string;
-    type: 'success' | 'error' | 'info';
-}
 
 const Home = () => {
     const [sourceText, setSourceText] = useState('');
