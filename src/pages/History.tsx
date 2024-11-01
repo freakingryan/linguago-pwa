@@ -3,23 +3,43 @@ import { RootState } from '../store';
 import { clearHistory } from '../store/slices/historySlice';
 import { TextToSpeechService } from '../services/textToSpeech';
 import { useMemo } from 'react';
+import { useToast } from '../hooks/useToast';
+import Toast from '../components/common/Toast';
 
 const History = () => {
     const dispatch = useDispatch();
     const { records } = useSelector((state: RootState) => state.history);
     const textToSpeech = useMemo(() => new TextToSpeechService(), []);
+    const { toast, showToast, hideToast } = useToast();
 
     const handleSpeak = (text: string, language: string) => {
         textToSpeech.speak(text, language);
     };
 
+    const handleClearHistory = () => {
+        dispatch(clearHistory());
+        showToast('历史记录已清空', 'success');
+    };
+
+    const handleCopy = (text: string) => {
+        navigator.clipboard.writeText(text);
+        showToast('已复制到剪贴板', 'success');
+    };
+
     return (
         <div className="max-w-2xl mx-auto space-y-4">
+            {toast.show && (
+                <Toast
+                    message={toast.message}
+                    type={toast.type}
+                    onClose={hideToast}
+                />
+            )}
             <div className="flex justify-between items-center">
                 <h2 className="text-xl font-bold text-gray-800 dark:text-white">翻译历史</h2>
                 {records.length > 0 && (
                     <button
-                        onClick={() => dispatch(clearHistory())}
+                        onClick={handleClearHistory}
                         className="px-4 py-2 text-sm text-red-600 hover:text-red-700 dark:text-red-400"
                     >
                         清空历史
@@ -55,7 +75,7 @@ const History = () => {
                                         </svg>
                                     </button>
                                     <button
-                                        onClick={() => navigator.clipboard.writeText(record.sourceText)}
+                                        onClick={() => handleCopy(record.sourceText)}
                                         className="p-1.5 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700"
                                         title="复制原文"
                                     >

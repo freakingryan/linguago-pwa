@@ -6,8 +6,8 @@ import { addRecord } from '../store/slices/historySlice';
 import { v4 as uuidv4 } from 'uuid';
 import Toast from '../components/common/Toast';
 import { AudioRecorderService } from '../services/audioRecorder';
-import { GeminiApiService } from '../services/geminiApi';
-import { ToastState } from '../types/toast';  // 添加 ToastState 类型导入
+import { UnifiedApiService } from '../services/api';
+import { useToast } from '../hooks/useToast';
 
 const COMMON_LANGUAGES = [
     { code: 'en', name: '英语' },
@@ -26,22 +26,18 @@ const Home = () => {
     const [customLanguage, setCustomLanguage] = useState('');
     const [translation, setTranslation] = useState('');
     const [isLoading, setIsLoading] = useState(false);
-    const [isListening, setIsListening] = useState(false);
     const [isRecording, setIsRecording] = useState(false);
     const [isProcessing, setIsProcessing] = useState(false);
     const audioRecorder = useMemo(() => new AudioRecorderService(), []);
-    const { apiKey, modelType } = useSelector((state: RootState) => state.settings);
-    const geminiApi = useMemo(() => new GeminiApiService(apiKey), [apiKey]);
+    const { apiKey, apiUrl, model } = useSelector((state: RootState) => state.settings);
+    const apiService = useMemo(() => new UnifiedApiService(apiUrl, apiKey, model), [apiUrl, apiKey, model]);
 
     const textToSpeech = useMemo(() => new TextToSpeechService(), []);
 
     const dispatch = useDispatch();
 
-    const [toast, setToast] = useState<ToastState>({
-        show: false,
-        message: '',
-        type: 'info'
-    });
+    // 使用 useToast hook
+    const { toast, showToast, hideToast } = useToast();
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -58,7 +54,7 @@ const Home = () => {
 
 ${sourceText}`;
 
-            const translatedText = await geminiApi.generateText(prompt);
+            const translatedText = await apiService.generateText(prompt);
             setTranslation(translatedText);
 
             dispatch(addRecord({
@@ -71,14 +67,10 @@ ${sourceText}`;
             }));
         } catch (error: any) {
             console.error('Translation error:', error);
+            showToast(error.message || '翻译失败，请重试', 'error');
         } finally {
             setIsLoading(false);
         }
-    };
-
-    // 显示 toast 的辅助函数
-    const showToast = (message: string, type: ToastState['type'] = 'info') => {
-        setToast({ show: true, message, type });
     };
 
     // 修改语音输入处理函数
@@ -96,7 +88,7 @@ ${sourceText}`;
                 showToast('正在处理录音...', 'info');
 
                 const audioBlob = await audioRecorder.stopRecording();
-                const text = await geminiApi.uploadAudio(audioBlob);
+                const text = await apiService.processAudio(audioBlob);
                 setSourceText(text);
                 showToast('录音处理完成', 'success');
             }
@@ -145,7 +137,7 @@ ${sourceText}`;
                 <Toast
                     message={toast.message}
                     type={toast.type}
-                    onClose={() => setToast({ ...toast, show: false })}
+                    onClose={hideToast}
                 />
             )}
 

@@ -4,15 +4,13 @@ interface SettingsState {
     apiKey: string;
     apiUrl: string;
     model: string;
-    modelType: 'openai' | 'gemini';
     theme: 'light' | 'dark';
 }
 
 const initialState: SettingsState = {
     apiKey: localStorage.getItem('apiKey') || '',
-    apiUrl: localStorage.getItem('apiUrl') || 'https://api.chatanywhere.tech/v1',
-    model: localStorage.getItem('model') || 'gpt-3.5-turbo',
-    modelType: (localStorage.getItem('modelType') as 'openai' | 'gemini') || 'openai',
+    apiUrl: localStorage.getItem('apiUrl') || 'https://generativelanguage.googleapis.com/v1beta',
+    model: localStorage.getItem('model') || 'gemini-1.5-flash',
     theme: (localStorage.getItem('theme') as 'light' | 'dark') || 'light',
 };
 
@@ -32,10 +30,6 @@ const settingsSlice = createSlice({
             state.model = action.payload;
             localStorage.setItem('model', action.payload);
         },
-        setModelType: (state, action: PayloadAction<'openai' | 'gemini'>) => {
-            state.modelType = action.payload;
-            localStorage.setItem('modelType', action.payload);
-        },
         setTheme: (state, action: PayloadAction<'light' | 'dark'>) => {
             state.theme = action.payload;
             localStorage.setItem('theme', action.payload);
@@ -47,7 +41,6 @@ export const {
     setApiKey,
     setApiUrl,
     setModel,
-    setModelType,
     setTheme
 } = settingsSlice.actions;
 export default settingsSlice.reducer; 

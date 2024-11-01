@@ -1,35 +1,26 @@
 import { useState } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import { RootState } from '../store';
-import { setApiKey, setApiUrl, setModel, setTheme, setModelType } from '../store/slices/settingsSlice';
-import axios from 'axios';
+import { setApiKey, setApiUrl, setModel, setTheme } from '../store/slices/settingsSlice';
 import Toast from '../components/common/Toast';
-import { ToastState } from '../types/toast';
+import { UnifiedApiService } from '../services/api';
+import { useToast } from '../hooks/useToast';
 
 const Settings = () => {
     const dispatch = useDispatch();
-    const { apiKey, apiUrl, model, theme, modelType } = useSelector((state: RootState) => state.settings);
+    const { apiKey, apiUrl, model, theme } = useSelector((state: RootState) => state.settings);
 
     const [tempSettings, setTempSettings] = useState({
         apiKey,
         apiUrl,
         model,
-        modelType
     });
     const [testStatus, setTestStatus] = useState<'idle' | 'testing' | 'success' | 'error'>('idle');
     const [errorMessage, setErrorMessage] = useState('');
 
-    const [toast, setToast] = useState<ToastState>({
-        show: false,
-        message: '',
-        type: 'info'
-    });
+    const { toast, showToast, hideToast } = useToast();
 
-    const showToast = (message: string, type: ToastState['type'] = 'info') => {
-        setToast({ show: true, message, type });
-    };
-
-    const handleInputChange = (e: React.ChangeEvent<HTMLInputElement | HTMLSelectElement>) => {
+    const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
         const { name, value } = e.target;
         setTempSettings(prev => ({
             ...prev,
@@ -42,33 +33,18 @@ const Settings = () => {
         setErrorMessage('');
 
         try {
-            if (tempSettings.modelType === 'gemini') {
-                const response = await axios.get(
-                    `https://generativelanguage.googleapis.com/v1beta/models?key=${tempSettings.apiKey}`
-                );
-                if (response.status === 200) {
-                    setTestStatus('success');
-                    showToast('API 连接测试成功！', 'success');
-                }
+            const api = new UnifiedApiService(
+                tempSettings.apiUrl,
+                tempSettings.apiKey,
+                tempSettings.model
+            );
+
+            const isConnected = await api.testConnection();
+            if (isConnected) {
+                setTestStatus('success');
+                showToast('API 连接测试成功！', 'success');
             } else {
-                const response = await axios.post(
-                    `${tempSettings.apiUrl}/chat/completions`,
-                    {
-                        model: tempSettings.model,
-                        messages: [{ role: 'user', content: 'Hello' }],
-                        max_tokens: 5
-                    },
-                    {
-                        headers: {
-                            'Authorization': `Bearer ${tempSettings.apiKey}`,
-                            'Content-Type': 'application/json'
-                        }
-                    }
-                );
-                if (response.status === 200) {
-                    setTestStatus('success');
-                    showToast('API 连接测试成功！', 'success');
-                }
+                throw new Error('连接测试失败');
             }
         } catch (error: any) {
             setTestStatus('error');
@@ -84,12 +60,9 @@ const Settings = () => {
             return;
         }
 
-        dispatch(setModelType(tempSettings.modelType as 'openai' | 'gemini'));
         dispatch(setApiKey(tempSettings.apiKey));
-        if (tempSettings.modelType === 'openai') {
-            dispatch(setApiUrl(tempSettings.apiUrl));
-            dispatch(setModel(tempSettings.model));
-        }
+        dispatch(setApiUrl(tempSettings.apiUrl));
+        dispatch(setModel(tempSettings.model));
         showToast('设置保存成功！', 'success');
     };
 
@@ -104,33 +77,32 @@ const Settings = () => {
                 <Toast
                     message={toast.message}
                     type={toast.type}
-                    onClose={() => setToast({ ...toast, show: false })}
+                    onClose={hideToast}
                 />
             )}
 
             <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow">
-                <h2 className="text-xl font-bold mb-4 dark:text-white">AI 模型设置</h2>
+                <h2 className="text-xl font-bold mb-4 dark:text-white">API 设置</h2>
 
-                {/* 模型类型选择 */}
+                {/* API URL 输入 */}
                 <div className="mb-4">
                     <label className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">
-                        选择 AI 模型
+                        API URL
                     </label>
-                    <select
-                        name="modelType"
-                        value={tempSettings.modelType}
+                    <input
+                        type="text"
+                        name="apiUrl"
+                        value={tempSettings.apiUrl}
                         onChange={handleInputChange}
                         className="w-full p-2 border rounded dark:bg-gray-700 dark:border-gray-600 dark:text-white"
-                    >
-                        <option value="openai">OpenAI</option>
-                        <option value="gemini">Google Gemini</option>
-                    </select>
+                        placeholder="默认: https://generativelanguage.googleapis.com/v1beta"
+                    />
                 </div>
 
                 {/* API Key 输入 */}
                 <div className="mb-4">
                     <label className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">
-                        {tempSettings.modelType === 'gemini' ? 'Google API Key' : 'OpenAI API Key'}
+                        API Key
                     </label>
                     <input
                         type="password"
@@ -142,38 +114,20 @@ const Settings = () => {
                     />
                 </div>
 
-                {/* OpenAI 特有设置 */}
-                {tempSettings.modelType === 'openai' && (
-                    <>
-                        <div className="mb-4">
-                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">
-                                API URL
-                            </label>
-                            <input
-                                type="text"
-                                name="apiUrl"
-                                value={tempSettings.apiUrl}
-                                onChange={handleInputChange}
-                                className="w-full p-2 border rounded dark:bg-gray-700 dark:border-gray-600 dark:text-white"
-                                placeholder="例如: https://api.openai.com/v1"
-                            />
-                        </div>
-
-                        <div className="mb-4">
-                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">
-                                模型名称
-                            </label>
-                            <input
-                                type="text"
-                                name="model"
-                                value={tempSettings.model}
-                                onChange={handleInputChange}
-                                className="w-full p-2 border rounded dark:bg-gray-700 dark:border-gray-600 dark:text-white"
-                                placeholder="例如: gpt-3.5-turbo"
-                            />
-                        </div>
-                    </>
-                )}
+                {/* 模型名称输入 */}
+                <div className="mb-4">
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">
+                        模型名称
+                    </label>
+                    <input
+                        type="text"
+                        name="model"
+                        value={tempSettings.model}
+                        onChange={handleInputChange}
+                        className="w-full p-2 border rounded dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                        placeholder="默认: gemini-1.5-flash"
+                    />
+                </div>
 
                 {/* 测试状态显示 */}
                 {testStatus !== 'idle' && (
