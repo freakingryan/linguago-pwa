@@ -4,6 +4,9 @@ import { RootState } from '../store';
 import { UnifiedApiService } from '../services/api';
 import Toast from './common/Toast';
 import { useToast } from '../hooks/useToast';
+import { v4 as uuidv4 } from 'uuid';
+import { useDispatch } from 'react-redux';
+import { addRecord } from '../store/slices/historySlice';
 
 const COMMON_LANGUAGES = [
     { code: 'en', name: '英语' },
@@ -60,6 +63,9 @@ const ImageTranslator: React.FC = () => {
     const [targetLanguage, setTargetLanguage] = useState('zh');
     const [customLanguage, setCustomLanguage] = useState('');
     const [isImageLoading, setIsImageLoading] = useState(false);
+    const [ocrResult, setOcrResult] = useState<string>('');
+    const [detectedLanguage, setDetectedLanguage] = useState<string>('');
+    const dispatch = useDispatch();
 
     // 图片验证函数
     const validateImage = (file: File): string | null => {
@@ -183,6 +189,7 @@ const ImageTranslator: React.FC = () => {
                 COMMON_LANGUAGES.find(lang => lang.code === targetLanguage)?.name ||
                 targetLanguage;
 
+            // 修改 handleTranslate 函数中的提示词
             const prompt = `Please analyze this image and translate any text content you find into ${targetLang}. 
             Follow these rules:
             1. First detect the language of the text in the image
@@ -195,15 +202,65 @@ const ImageTranslator: React.FC = () => {
             5. Ensure accurate translation while maintaining the original structure
             6. Handle any special characters or formatting appropriately`;
 
-            const response = await apiService.generateImageContent(prompt, base64Data, selectedImage.type);
-            console.log('AI Response:', response);
-            setTranslation(response);
+            const response = await apiService.generateImageContent(
+                prompt,
+                base64Data,
+                selectedImage.type
+            );
+
+            // 解析响应
+            const result = parseTranslationResult(response);
+            if (result) {
+                setOcrResult(result.originalText);
+                setDetectedLanguage(result.detectedLanguage);
+                setTranslation(response);
+
+                // 压缩图片并保存历史记录
+                const compressedImageUrl = await getCompressedImageUrl(selectedImage);
+                dispatch(addRecord({
+                    id: uuidv4(),
+                    type: 'image',
+                    sourceText: result.originalText,
+                    translatedText: result.translation,
+                    sourceLang: result.detectedLanguage,
+                    targetLang: targetLanguage || customLanguage,
+                    timestamp: Date.now(),
+                    imageUrl: compressedImageUrl
+                }));
+            }
         } catch (error: any) {
             console.error('Translation error:', error);
-            showToast(error.message || '图片翻译失败，请重试', 'error');
+            showToast(error.message || '图片翻译失败，��重试', 'error');
         } finally {
             setIsLoading(false);
         }
+    };
+
+    // 添加图片压缩函数
+    const getCompressedImageUrl = async (file: File): Promise<string> => {
+        const canvas = document.createElement('canvas');
+        const ctx = canvas.getContext('2d')!;
+        const img = await createImageBitmap(file);
+
+        // 计算压缩后的尺寸
+        let { width, height } = img;
+        const maxSize = 400; // 缩略图最大尺寸
+
+        if (width > maxSize || height > maxSize) {
+            if (width > height) {
+                height = Math.round((height * maxSize) / width);
+                width = maxSize;
+            } else {
+                width = Math.round((width * maxSize) / height);
+                height = maxSize;
+            }
+        }
+
+        canvas.width = width;
+        canvas.height = height;
+        ctx.drawImage(img, 0, 0, width, height);
+
+        return canvas.toDataURL('image/jpeg', 0.7);
     };
 
     // 修改图片预览部分
@@ -337,6 +394,24 @@ const ImageTranslator: React.FC = () => {
             >
                 {isLoading ? '翻译中...' : '翻译图片'}
             </button>
+
+            {ocrResult && !translation && (
+                <div className="p-4 bg-gray-50 dark:bg-gray-700 rounded-lg">
+                    <div className="flex justify-between items-center mb-2">
+                        <span className="text-sm font-medium text-gray-500 dark:text-gray-400">
+                            识别结果预览
+                        </span>
+                        {detectedLanguage && (
+                            <span className="text-xs px-2 py-1 bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200 rounded">
+                                检测到: {detectedLanguage}
+                            </span>
+                        )}
+                    </div>
+                    <p className="text-gray-700 dark:text-gray-200">
+                        {ocrResult}
+                    </p>
+                </div>
+            )}
 
             {translation && (
                 <div className="p-6 bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700">
