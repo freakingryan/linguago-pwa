@@ -188,4 +188,37 @@ export class UnifiedApiService {
             reader.readAsDataURL(blob);
         });
     }
+
+    // 图片翻译
+    async generateImageContent(prompt: string, base64Image: string, mimeType: string): Promise<string> {
+        try {
+            const response = await this.axiosInstance.post(
+                `${this.apiUrl}/models/${this.model}:generateContent?key=${this.apiKey}`,
+                {
+                    contents: [{
+                        parts: [
+                            { text: prompt },
+                            {
+                                inlineData: {
+                                    mimeType: mimeType,
+                                    data: base64Image
+                                }
+                            }
+                        ]
+                    }]
+                }
+            );
+
+            console.log('Image Translation Response:', {
+                status: response.status,
+                candidates: response.data.candidates,
+                fullResponse: response.data
+            });
+
+            return response.data.candidates[0].content.parts[0].text;
+        } catch (error: any) {
+            console.error('Generate image content error:', error);
+            throw new Error(error.response?.data?.error?.message || '图片处理失败，请重试');
+        }
+    }
 } 

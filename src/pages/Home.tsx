@@ -9,6 +9,7 @@ import { AudioRecorderService } from '../services/audioRecorder';
 import { UnifiedApiService } from '../services/api';
 import { useToast } from '../hooks/useToast';
 import RecordingOverlay from '../components/common/RecordingOverlay';
+import ImageTranslator from '../components/ImageTranslator';
 
 const COMMON_LANGUAGES = [
     { code: 'en', name: '英语' },
@@ -43,6 +44,8 @@ const Home = () => {
     // 添加录音时长状态
     const [recordingDuration, setRecordingDuration] = useState(0);
     const recordingTimer = useRef<NodeJS.Timeout | null>(null);
+
+    const [activeTab, setActiveTab] = useState<'text' | 'image'>('text');
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -173,80 +176,104 @@ ${sourceText}`;
                 />
             )}
 
-            <form onSubmit={handleSubmit} className="space-y-4">
-                {/* 源文本输入 */}
-                <div>
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">
-                        输入要翻译的文本
-                    </label>
-                    <div className="relative">
-                        <textarea
-                            value={sourceText}
-                            onChange={(e) => setSourceText(e.target.value)}
-                            className="w-full p-3 border rounded-md dark:bg-gray-700 dark:border-gray-600 dark:text-white pr-12"
-                            placeholder="请输入任何语言的文本..."
-                            rows={4}
-                            required
-                        />
-                        {/* 语音输入按钮移到右下角 */}
+            <div className="mb-4">
+                <div className="flex space-x-2 mb-4">
+                    <button
+                        onClick={() => setActiveTab('text')}
+                        className={`flex-1 py-2 px-4 rounded-md ${activeTab === 'text'
+                                ? 'bg-blue-600 text-white'
+                                : 'bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-200'
+                            }`}
+                    >
+                        文本翻译
+                    </button>
+                    <button
+                        onClick={() => setActiveTab('image')}
+                        className={`flex-1 py-2 px-4 rounded-md ${activeTab === 'image'
+                                ? 'bg-blue-600 text-white'
+                                : 'bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-200'
+                            }`}
+                    >
+                        图片翻译
+                    </button>
+                </div>
+
+                {activeTab === 'text' ? (
+                    <form onSubmit={handleSubmit} className="space-y-4">
+                        <div>
+                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-200 mb-1">
+                                输入要翻译的文本
+                            </label>
+                            <div className="relative">
+                                <textarea
+                                    value={sourceText}
+                                    onChange={(e) => setSourceText(e.target.value)}
+                                    className="w-full p-3 border rounded-md dark:bg-gray-700 dark:border-gray-600 dark:text-white pr-12"
+                                    placeholder="请输入任何语言的文本..."
+                                    rows={4}
+                                    required
+                                />
+                                {/* 语音输入按钮移到右下角 */}
+                                <button
+                                    type="button"
+                                    onClick={handleVoiceInput}
+                                    disabled={isProcessing}
+                                    className="absolute right-2 bottom-2 p-2 rounded-full hover:bg-gray-100 dark:hover:bg-gray-600 transition-colors"
+                                    title={isRecording ? '点击停止录音' : '点击开始录音'}
+                                >
+                                    {renderMicrophoneIcon()}
+                                </button>
+                            </div>
+                        </div>
+
+                        <div className="space-y-2">
+                            <label className="block text-sm font-medium text-gray-700 dark:text-gray-200">
+                                选择目标语言
+                            </label>
+                            <div className="grid grid-cols-4 gap-2">
+                                {COMMON_LANGUAGES.map((lang) => (
+                                    <button
+                                        key={lang.code}
+                                        type="button"
+                                        onClick={() => {
+                                            setTargetLanguage(lang.code);
+                                            setCustomLanguage('');
+                                        }}
+                                        className={`px-3 py-2 rounded-md text-sm ${targetLanguage === lang.code && !customLanguage
+                                            ? 'bg-blue-600 text-white'
+                                            : 'bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-200'
+                                            }`}
+                                    >
+                                        {lang.name}
+                                    </button>
+                                ))}
+                            </div>
+                            <div className="mt-2">
+                                <input
+                                    type="text"
+                                    value={customLanguage}
+                                    onChange={(e) => {
+                                        setCustomLanguage(e.target.value);
+                                        setTargetLanguage('');
+                                    }}
+                                    placeholder="或输入其他语言..."
+                                    className="w-full p-2 border rounded-md dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                                />
+                            </div>
+                        </div>
+
                         <button
-                            type="button"
-                            onClick={handleVoiceInput}
-                            disabled={isProcessing}
-                            className="absolute right-2 bottom-2 p-2 rounded-full hover:bg-gray-100 dark:hover:bg-gray-600 transition-colors"
-                            title={isRecording ? '点击停止录音' : '点击开始录音'}
+                            type="submit"
+                            disabled={isLoading || !apiKey || (!targetLanguage && !customLanguage)}
+                            className="w-full py-3 px-4 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors"
                         >
-                            {renderMicrophoneIcon()}
+                            {isLoading ? '翻译中...' : '翻译'}
                         </button>
-                    </div>
-                </div>
-
-                {/* 目标语言选择 */}
-                <div className="space-y-2">
-                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-200">
-                        选择目标语言
-                    </label>
-                    <div className="grid grid-cols-4 gap-2">
-                        {COMMON_LANGUAGES.map((lang) => (
-                            <button
-                                key={lang.code}
-                                type="button"
-                                onClick={() => {
-                                    setTargetLanguage(lang.code);
-                                    setCustomLanguage('');
-                                }}
-                                className={`px-3 py-2 rounded-md text-sm ${targetLanguage === lang.code && !customLanguage
-                                    ? 'bg-blue-600 text-white'
-                                    : 'bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-200'
-                                    }`}
-                            >
-                                {lang.name}
-                            </button>
-                        ))}
-                    </div>
-                    <div className="mt-2">
-                        <input
-                            type="text"
-                            value={customLanguage}
-                            onChange={(e) => {
-                                setCustomLanguage(e.target.value);
-                                setTargetLanguage('');
-                            }}
-                            placeholder="或输入其他语言..."
-                            className="w-full p-2 border rounded-md dark:bg-gray-700 dark:border-gray-600 dark:text-white"
-                        />
-                    </div>
-                </div>
-
-                {/* 翻译按钮 */}
-                <button
-                    type="submit"
-                    disabled={isLoading || !apiKey || (!targetLanguage && !customLanguage)}
-                    className="w-full py-3 px-4 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors"
-                >
-                    {isLoading ? '翻译中...' : '翻译'}
-                </button>
-            </form>
+                    </form>
+                ) : (
+                    <ImageTranslator />
+                )}
+            </div>
 
             {/* API 配置提示 */}
             {!apiKey && (
