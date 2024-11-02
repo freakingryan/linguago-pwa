@@ -16,6 +16,32 @@ const COMMON_LANGUAGES = [
     { code: 'ru', name: '俄语' },
 ];
 
+// 在 ImageTranslator 组件中添加一个新的类型定义
+interface TranslationResult {
+    originalText: string;
+    detectedLanguage: string;
+    translation: string;
+}
+
+// 添加一个解析翻译结果的函数
+const parseTranslationResult = (text: string): TranslationResult | null => {
+    try {
+        const lines = text.split('\n').map(line => line.trim());
+        const originalText = lines.find(line => line.startsWith('Original Text:'))?.replace('Original Text:', '').trim() || '';
+        const detectedLanguage = lines.find(line => line.startsWith('Detected Language:'))?.replace('Detected Language:', '').trim() || '';
+        const translation = lines.find(line => line.startsWith('Translation:'))?.replace('Translation:', '').trim() || '';
+
+        return {
+            originalText,
+            detectedLanguage,
+            translation
+        };
+    } catch (error) {
+        console.error('Failed to parse translation result:', error);
+        return null;
+    }
+};
+
 const ImageTranslator: React.FC = () => {
     const [selectedImage, setSelectedImage] = useState<File | null>(null);
     const [previewUrl, setPreviewUrl] = useState<string | null>(null);
@@ -152,8 +178,8 @@ const ImageTranslator: React.FC = () => {
                                 setCustomLanguage('');
                             }}
                             className={`px-3 py-2 rounded-md text-sm ${targetLanguage === lang.code && !customLanguage
-                                    ? 'bg-blue-600 text-white'
-                                    : 'bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-200'
+                                ? 'bg-blue-600 text-white'
+                                : 'bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-200'
                                 }`}
                         >
                             {lang.name}
@@ -183,13 +209,13 @@ const ImageTranslator: React.FC = () => {
             </button>
 
             {translation && (
-                <div className="p-4 bg-white dark:bg-gray-800 rounded-lg shadow">
-                    <div className="flex justify-between items-start mb-2">
-                        <h3 className="font-bold text-gray-900 dark:text-white">翻译结果：</h3>
+                <div className="p-6 bg-white dark:bg-gray-800 rounded-lg shadow-lg border border-gray-200 dark:border-gray-700">
+                    <div className="flex justify-between items-start mb-4">
+                        <h3 className="text-lg font-bold text-gray-900 dark:text-white">翻译结果</h3>
                         <button
                             onClick={() => navigator.clipboard.writeText(translation)}
                             className="p-2 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
-                            title="复制翻译结果"
+                            title="复制全部内容"
                         >
                             <svg className="w-5 h-5 text-gray-600 dark:text-gray-300" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
@@ -198,9 +224,63 @@ const ImageTranslator: React.FC = () => {
                             </svg>
                         </button>
                     </div>
-                    <p className="text-gray-700 dark:text-gray-200 whitespace-pre-wrap">
-                        {translation}
-                    </p>
+
+                    {(() => {
+                        const result = parseTranslationResult(translation);
+                        if (!result) {
+                            return (
+                                <p className="text-gray-700 dark:text-gray-200 whitespace-pre-wrap">
+                                    {translation}
+                                </p>
+                            );
+                        }
+
+                        return (
+                            <div className="space-y-4">
+                                <div className="p-4 bg-gray-50 dark:bg-gray-700 rounded-lg">
+                                    <div className="flex justify-between items-center mb-2">
+                                        <span className="text-sm font-medium text-gray-500 dark:text-gray-400">
+                                            原文
+                                        </span>
+                                        <span className="text-xs px-2 py-1 bg-blue-100 dark:bg-blue-900 text-blue-800 dark:text-blue-200 rounded">
+                                            {result.detectedLanguage}
+                                        </span>
+                                    </div>
+                                    <p className="text-lg text-gray-900 dark:text-white font-medium">
+                                        {result.originalText}
+                                    </p>
+                                </div>
+
+                                <div className="relative">
+                                    <div className="absolute left-1/2 -translate-x-1/2 -translate-y-1/2">
+                                        <div className="w-8 h-8 bg-blue-500 dark:bg-blue-600 rounded-full flex items-center justify-center">
+                                            <svg className="w-5 h-5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 14l-7 7m0 0l-7-7m7 7V3" />
+                                            </svg>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div className="p-4 bg-blue-50 dark:bg-gray-700 rounded-lg">
+                                    <div className="flex justify-between items-center mb-2">
+                                        <span className="text-sm font-medium text-gray-500 dark:text-gray-400">
+                                            译文
+                                        </span>
+                                        <button
+                                            onClick={() => navigator.clipboard.writeText(result.translation)}
+                                            className="text-xs px-2 py-1 text-gray-600 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-gray-600 rounded transition-colors"
+                                            title="复制译文"
+                                        >
+                                            复制
+                                        </button>
+                                    </div>
+                                    <p className="text-lg text-gray-900 dark:text-white font-medium">
+                                        {result.translation}
+                                    </p>
+                                </div>
+                            </div>
+                        );
+                    })()}
                 </div>
             )}
         </div>
