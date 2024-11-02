@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useSelector } from 'react-redux';
 import { RootState } from '../store';
 import { UnifiedApiService } from '../services/api';
@@ -53,6 +53,12 @@ const IMAGE_CONFIG = {
     VALID_TYPES: ['image/jpeg', 'image/png', 'image/webp', 'image/gif'] as const,
 } as const;
 
+// 添加翻译状态类型
+type TranslationStatus = {
+    stage: 'idle' | 'preparing' | 'uploading' | 'translating' | 'done';
+    progress: number;
+};
+
 const ImageTranslator: React.FC = () => {
     const [selectedImage, setSelectedImage] = useState<File | null>(null);
     const [previewUrl, setPreviewUrl] = useState<string | null>(null);
@@ -66,6 +72,84 @@ const ImageTranslator: React.FC = () => {
     const [ocrResult, setOcrResult] = useState<string>('');
     const [detectedLanguage, setDetectedLanguage] = useState<string>('');
     const dispatch = useDispatch();
+    const [translationStatus, setTranslationStatus] = useState<TranslationStatus>({
+        stage: 'idle',
+        progress: 0
+    });
+    const abortControllerRef = useRef<AbortController | null>(null);
+
+    // 添加快捷键支持
+    useEffect(() => {
+        const handleKeyPress = (e: KeyboardEvent) => {
+            // Ctrl/Cmd + V 粘贴图片
+            if ((e.ctrlKey || e.metaKey) && e.key === 'v') {
+                handlePaste(e);
+            }
+            // Esc 取消翻译
+            if (e.key === 'Escape' && isLoading) {
+                handleCancelTranslation();
+            }
+            // Enter 开始翻译
+            if (e.key === 'Enter' && (e.ctrlKey || e.metaKey) && selectedImage && !isLoading) {
+                handleTranslate();
+            }
+        };
+
+        window.addEventListener('keydown', handleKeyPress);
+        return () => window.removeEventListener('keydown', handleKeyPress);
+    }, [selectedImage, isLoading]);
+
+    // 处理粘贴事件
+    const handlePaste = async (e: ClipboardEvent | KeyboardEvent) => {
+        const items = (e as ClipboardEvent).clipboardData?.items;
+        if (!items) return;
+
+        for (const item of items) {
+            if (item.type.startsWith('image/')) {
+                const file = item.getAsFile();
+                if (file) {
+                    await handleImageFile(file);
+                    break;
+                }
+            }
+        }
+    };
+
+    // 处理图片文件
+    const handleImageFile = async (file: File) => {
+        const errorMessage = validateImage(file);
+        if (errorMessage) {
+            showToast(errorMessage, 'error');
+            return;
+        }
+
+        setIsImageLoading(true);
+        setTranslationStatus({ stage: 'preparing', progress: 0 });
+
+        try {
+            const compressedFile = await compressImage(file);
+            setSelectedImage(compressedFile);
+            const url = URL.createObjectURL(compressedFile);
+            setPreviewUrl(url);
+            setTranslation('');
+            setTranslationStatus({ stage: 'idle', progress: 0 });
+        } catch (error) {
+            showToast('图片处理失败', 'error');
+        } finally {
+            setIsImageLoading(false);
+        }
+    };
+
+    // 取消翻译
+    const handleCancelTranslation = () => {
+        if (abortControllerRef.current) {
+            abortControllerRef.current.abort();
+            abortControllerRef.current = null;
+            setIsLoading(false);
+            setTranslationStatus({ stage: 'idle', progress: 0 });
+            showToast('已取消翻译', 'info');
+        }
+    };
 
     // 图片验证函数
     const validateImage = (file: File): string | null => {
@@ -158,7 +242,7 @@ const ImageTranslator: React.FC = () => {
             setPreviewUrl(url);
             setTranslation('');
         } catch (error) {
-            showToast('图片处理失败', 'error');
+            showToast('图片���理失败', 'error');
             console.error('Image processing error:', error);
         } finally {
             setIsImageLoading(false);
@@ -177,19 +261,28 @@ const ImageTranslator: React.FC = () => {
         });
     };
 
+    // 修改翻译函数
     const handleTranslate = async () => {
         if (!selectedImage || !apiKey) return;
 
         setIsLoading(true);
+        setTranslationStatus({ stage: 'preparing', progress: 0 });
+        abortControllerRef.current = new AbortController();
+
         try {
+            // 准备阶段
+            setTranslationStatus({ stage: 'preparing', progress: 20 });
             const base64Data = await convertToBase64(selectedImage);
+
+            // 上传阶段
+            setTranslationStatus({ stage: 'uploading', progress: 40 });
             const apiService = new UnifiedApiService(apiUrl, apiKey, model);
 
             const targetLang = customLanguage ||
                 COMMON_LANGUAGES.find(lang => lang.code === targetLanguage)?.name ||
                 targetLanguage;
 
-            // 修改 handleTranslate 函数中的提示词
+            // 添加提示词
             const prompt = `Please analyze this image and translate any text content you find into ${targetLang}. 
             Follow these rules:
             1. First detect the language of the text in the image
@@ -202,20 +295,22 @@ const ImageTranslator: React.FC = () => {
             5. Ensure accurate translation while maintaining the original structure
             6. Handle any special characters or formatting appropriately`;
 
+            // 翻译阶段
+            setTranslationStatus({ stage: 'translating', progress: 60 });
             const response = await apiService.generateImageContent(
                 prompt,
                 base64Data,
                 selectedImage.type
             );
 
-            // 解析响应
+            // 完成阶段
+            setTranslationStatus({ stage: 'done', progress: 100 });
             const result = parseTranslationResult(response);
             if (result) {
                 setOcrResult(result.originalText);
                 setDetectedLanguage(result.detectedLanguage);
                 setTranslation(response);
 
-                // 压缩图片并保存历史记录
                 const compressedImageUrl = await getCompressedImageUrl(selectedImage);
                 dispatch(addRecord({
                     id: uuidv4(),
@@ -229,10 +324,17 @@ const ImageTranslator: React.FC = () => {
                 }));
             }
         } catch (error: any) {
+            if (error.name === 'AbortError') {
+                return;
+            }
             console.error('Translation error:', error);
-            showToast(error.message || '图片翻译失败，��重试', 'error');
+            showToast(error.message || '图片翻译失败，请重试', 'error');
         } finally {
             setIsLoading(false);
+            abortControllerRef.current = null;
+            setTimeout(() => {
+                setTranslationStatus({ stage: 'idle', progress: 0 });
+            }, 1000);
         }
     };
 
@@ -319,6 +421,49 @@ const ImageTranslator: React.FC = () => {
                 <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
                     支持 JPG、PNG、GIF、WebP 格式，最大 4MB
                 </p>
+            </div>
+        );
+    };
+
+    // 渲染进度指示器
+    const renderProgress = () => {
+        if (translationStatus.stage === 'idle') return null;
+
+        const stageText = {
+            preparing: '准备中...',
+            uploading: '上传图片...',
+            translating: '翻译中...',
+            done: '完成'
+        }[translationStatus.stage];
+
+        return (
+            <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+                <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-xl max-w-sm w-full mx-4">
+                    <div className="space-y-4">
+                        <div className="relative h-2 bg-gray-200 rounded-full overflow-hidden">
+                            <div
+                                className="absolute left-0 top-0 h-full bg-blue-500 transition-all duration-300"
+                                style={{ width: `${translationStatus.progress}%` }}
+                            />
+                        </div>
+                        <div className="flex justify-between items-center">
+                            <span className="text-sm text-gray-600 dark:text-gray-300">
+                                {stageText}
+                            </span>
+                            <span className="text-sm font-medium text-gray-700 dark:text-gray-200">
+                                {translationStatus.progress}%
+                            </span>
+                        </div>
+                        {isLoading && (
+                            <button
+                                onClick={handleCancelTranslation}
+                                className="w-full py-2 px-4 bg-red-600 text-white rounded hover:bg-red-700 transition-colors"
+                            >
+                                取消翻译
+                            </button>
+                        )}
+                    </div>
+                </div>
             </div>
         );
     };
@@ -488,6 +633,17 @@ const ImageTranslator: React.FC = () => {
                     })()}
                 </div>
             )}
+
+            {/* 添加进度指示器 */}
+            {renderProgress()}
+
+            {/* 添加快捷键提示 */}
+            <div className="text-xs text-gray-500 dark:text-gray-400 space-y-1">
+                <p>快捷键：</p>
+                <p>• Ctrl/Cmd + V：粘贴图片</p>
+                <p>• Ctrl/Cmd + Enter：开始翻译</p>
+                <p>• Esc：取消翻译</p>
+            </div>
         </div>
     );
 };
