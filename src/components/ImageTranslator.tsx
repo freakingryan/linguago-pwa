@@ -42,6 +42,14 @@ const parseTranslationResult = (text: string): TranslationResult | null => {
     }
 };
 
+// 添加常量配置
+const IMAGE_CONFIG = {
+    MAX_SIZE: 4 * 1024 * 1024, // 4MB
+    MAX_DIMENSION: 1920, // 最大宽高
+    COMPRESSION_QUALITY: 0.8, // 压缩质量
+    VALID_TYPES: ['image/jpeg', 'image/png', 'image/webp', 'image/gif'] as const,
+} as const;
+
 const ImageTranslator: React.FC = () => {
     const [selectedImage, setSelectedImage] = useState<File | null>(null);
     const [previewUrl, setPreviewUrl] = useState<string | null>(null);
@@ -51,18 +59,103 @@ const ImageTranslator: React.FC = () => {
     const { toast, showToast, hideToast } = useToast();
     const [targetLanguage, setTargetLanguage] = useState('zh');
     const [customLanguage, setCustomLanguage] = useState('');
+    const [isImageLoading, setIsImageLoading] = useState(false);
 
-    const handleImageChange = (event: React.ChangeEvent<HTMLInputElement>) => {
-        const file = event.target.files?.[0];
-        if (file) {
-            if (file.size > 4 * 1024 * 1024) { // 4MB limit
-                showToast('图片大小不能超过4MB', 'error');
-                return;
-            }
-            setSelectedImage(file);
+    // 图片验证函数
+    const validateImage = (file: File): string | null => {
+        if (!IMAGE_CONFIG.VALID_TYPES.includes(file.type as any)) {
+            return '不支持的图片格式，请使用 JPG、PNG、GIF 或 WebP 格式';
+        }
+        if (file.size > IMAGE_CONFIG.MAX_SIZE) {
+            return `图片大小不能超过${IMAGE_CONFIG.MAX_SIZE / 1024 / 1024}MB`;
+        }
+        return null;
+    };
+
+    // 图片压缩函数
+    const compressImage = async (file: File): Promise<File> => {
+        return new Promise((resolve, reject) => {
+            const img = new Image();
             const url = URL.createObjectURL(file);
+
+            img.onload = () => {
+                URL.revokeObjectURL(url); // 释放URL
+                const canvas = document.createElement('canvas');
+                const ctx = canvas.getContext('2d')!;
+
+                // 计算压缩后的尺寸
+                let { width, height } = img;
+                if (width > IMAGE_CONFIG.MAX_DIMENSION || height > IMAGE_CONFIG.MAX_DIMENSION) {
+                    if (width > height) {
+                        height = Math.round((height * IMAGE_CONFIG.MAX_DIMENSION) / width);
+                        width = IMAGE_CONFIG.MAX_DIMENSION;
+                    } else {
+                        width = Math.round((width * IMAGE_CONFIG.MAX_DIMENSION) / height);
+                        height = IMAGE_CONFIG.MAX_DIMENSION;
+                    }
+                }
+
+                // 设置canvas尺寸
+                canvas.width = width;
+                canvas.height = height;
+
+                // 绘制图片
+                ctx.drawImage(img, 0, 0, width, height);
+
+                // 转换为blob
+                canvas.toBlob(
+                    (blob) => {
+                        if (!blob) {
+                            reject(new Error('图片压缩失败'));
+                            return;
+                        }
+                        // 创建新的File对象
+                        const compressedFile = new File(
+                            [blob],
+                            file.name,
+                            { type: file.type }
+                        );
+                        resolve(compressedFile);
+                    },
+                    file.type,
+                    IMAGE_CONFIG.COMPRESSION_QUALITY
+                );
+            };
+
+            img.onerror = () => {
+                URL.revokeObjectURL(url);
+                reject(new Error('图片加载失败'));
+            };
+
+            img.src = url;
+        });
+    };
+
+    // 处理图片选择
+    const handleImageChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
+        const file = event.target.files?.[0];
+        if (!file) return;
+
+        // 验证图片
+        const errorMessage = validateImage(file);
+        if (errorMessage) {
+            showToast(errorMessage, 'error');
+            return;
+        }
+
+        setIsImageLoading(true);
+        try {
+            // 压缩图片
+            const compressedFile = await compressImage(file);
+            setSelectedImage(compressedFile);
+            const url = URL.createObjectURL(compressedFile);
             setPreviewUrl(url);
             setTranslation('');
+        } catch (error) {
+            showToast('图片处理失败', 'error');
+            console.error('Image processing error:', error);
+        } finally {
+            setIsImageLoading(false);
         }
     };
 
@@ -113,6 +206,67 @@ const ImageTranslator: React.FC = () => {
         }
     };
 
+    // 修改图片预览部分
+    const renderImagePreview = () => {
+        if (isImageLoading) {
+            return (
+                <div className="flex items-center justify-center h-64">
+                    <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500"></div>
+                </div>
+            );
+        }
+
+        if (previewUrl) {
+            return (
+                <div className="relative group">
+                    <img
+                        src={previewUrl}
+                        alt="Preview"
+                        className="max-h-64 mx-auto rounded-lg transition-transform group-hover:scale-[0.99]"
+                    />
+                    <button
+                        onClick={() => {
+                            setSelectedImage(null);
+                            setPreviewUrl(null);
+                            setTranslation('');
+                        }}
+                        className="absolute top-2 right-2 p-1 rounded-full bg-gray-800/70 text-white opacity-0 group-hover:opacity-100 transition-opacity"
+                        title="移除图片"
+                    >
+                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                        </svg>
+                    </button>
+                </div>
+            );
+        }
+
+        return (
+            <div className="py-8">
+                <svg
+                    className="mx-auto h-12 w-12 text-gray-400"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                >
+                    <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={2}
+                        d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"
+                    />
+                </svg>
+                <p className="mt-2 text-sm text-gray-600 dark:text-gray-400">
+                    点击选择图片或拖拽图片到此处
+                </p>
+                <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+                    支持 JPG、PNG、GIF、WebP 格式，最大 4MB
+                </p>
+            </div>
+        );
+    };
+
+    // 修改上传区域的渲染
     return (
         <div className="space-y-4">
             {toast.show && (
@@ -123,44 +277,20 @@ const ImageTranslator: React.FC = () => {
                 />
             )}
 
-            <div className="border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-lg p-4">
+            <div className="border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-lg p-4 transition-colors hover:border-blue-500 dark:hover:border-blue-400">
                 <input
                     type="file"
-                    accept="image/*"
+                    accept={IMAGE_CONFIG.VALID_TYPES.join(',')}
                     onChange={handleImageChange}
                     className="hidden"
                     id="image-input"
+                    disabled={isImageLoading}
                 />
                 <label
                     htmlFor="image-input"
                     className="block text-center cursor-pointer"
                 >
-                    {previewUrl ? (
-                        <img
-                            src={previewUrl}
-                            alt="Preview"
-                            className="max-h-64 mx-auto rounded-lg"
-                        />
-                    ) : (
-                        <div className="py-8">
-                            <svg
-                                className="mx-auto h-12 w-12 text-gray-400"
-                                fill="none"
-                                stroke="currentColor"
-                                viewBox="0 0 24 24"
-                            >
-                                <path
-                                    strokeLinecap="round"
-                                    strokeLinejoin="round"
-                                    strokeWidth={2}
-                                    d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"
-                                />
-                            </svg>
-                            <p className="mt-2 text-sm text-gray-600 dark:text-gray-400">
-                                点击选择图片或拖拽图片到此处
-                            </p>
-                        </div>
-                    )}
+                    {renderImagePreview()}
                 </label>
             </div>
 
