@@ -1,191 +1,162 @@
+import { VoiceCacheService } from './voiceCache';
+
+const PLATFORM = {
+    IOS: 'ios',
+    ANDROID: 'android',
+    DESKTOP: 'desktop'
+} as const;
+
+type Platform = typeof PLATFORM[keyof typeof PLATFORM];
+
 export class TextToSpeechService {
     private synthesis: SpeechSynthesis;
-    private readonly languageMap: { [key: string]: string } = {
-        'zh': 'zh-CN',
-        'en': 'en-US',
-        'ja': 'ja-JP',
-        'ko': 'ko-KR',
-        'fr': 'fr-FR',
-        'de': 'de-DE',
-        'es': 'es-ES',
-        'ru': 'ru-RU'
-    };
+    private platform: Platform;
+    private voiceCache: VoiceCacheService;
 
     constructor() {
         this.synthesis = window.speechSynthesis;
-        // 在移动设备上预加载语音
-        if (this.isMobileDevice()) {
-            this.preloadVoices();
+        this.platform = this.detectPlatform();
+        this.voiceCache = new VoiceCacheService();
+    }
+
+    async speak(text: string, lang: string = 'en'): Promise<void> {
+        try {
+            // 1. 检查缓存
+            const cachedVoice = await this.voiceCache.getVoice(text, lang);
+            if (cachedVoice) {
+                return this.playAudioBuffer(cachedVoice);
+            }
+
+            // 2. 根据平台选择播放策略
+            switch (this.platform) {
+                case PLATFORM.IOS:
+                    return this.speakOnIOS(text, lang);
+                case PLATFORM.ANDROID:
+                    return this.speakOnAndroid(text, lang);
+                default:
+                    return this.webSpeechSpeak(text, lang);
+            }
+        } catch (error) {
+            console.error('语音合成错误:', error);
+            return this.fallbackSpeak(text, lang);
         }
     }
 
-    speak = async (text: string, lang: string = 'en') => {
-        // 在 try 块外部定义 fullLangCode，这样 catch 块也能访问到
-        const fullLangCode = this.getFullLanguageCode(lang);
-
-        try {
-            // iOS 设备特殊处理
-            if (this.isIOSDevice()) {
-                return this.speakOnIOS(text, fullLangCode);
-            }
-
-            // 检查浏览器支持
-            if (!('speechSynthesis' in window)) {
-                return this.fallbackSpeak(text, fullLangCode);
-            }
-
-            // 确保语音已加载（iOS 特别需要）
-            await this.preloadVoices();
-
-            // Web Speech API 实现
-            const utterance = new SpeechSynthesisUtterance(text);
-            utterance.lang = fullLangCode;
-
-            // 选择最佳语音
-            const voices = this.synthesis.getVoices();
-            const bestVoice = this.findBestVoice(voices, fullLangCode);
-            if (bestVoice) {
-                utterance.voice = bestVoice;
-            }
-
-            // iOS Safari 的特殊处理
-            if (this.isIOSDevice()) {
-                this.synthesis.cancel(); // 防止重复播放
-            }
-
-            return new Promise((resolve, reject) => {
-                utterance.onend = () => {
-                    this.synthesis.cancel(); // 清理
-                    resolve(undefined);
-                };
-                utterance.onerror = (event) => {
-                    console.error('语音合成错误:', event);
-                    this.fallbackSpeak(text, fullLangCode).then(resolve).catch(reject);
-                };
-                this.synthesis.speak(utterance);
-            });
-        } catch (error) {
-            console.error('语音合成错误:', error);
-            return this.fallbackSpeak(text, fullLangCode);
+    private async speakOnAndroid(text: string, lang: string): Promise<void> {
+        if (window.navigator.userAgent.includes('wv')) {
+            return this.fallbackSpeak(text, lang);
         }
-    };
+        return this.webSpeechSpeak(text, lang);
+    }
 
-    // iOS 设备的特殊处理
     private async speakOnIOS(text: string, lang: string): Promise<void> {
         try {
             const utterance = new SpeechSynthesisUtterance(text);
-            utterance.lang = lang;  // 使用转换后的语言代码
+            utterance.lang = lang;
+            this.synthesis.cancel();
 
-            // iOS 需要用户交互才能播放
             return new Promise((resolve, reject) => {
                 utterance.onend = () => {
                     this.synthesis.cancel();
                     resolve();
                 };
                 utterance.onerror = () => {
-                    // 如果失败，使用回退方案
                     this.fallbackSpeak(text, lang).then(resolve).catch(reject);
                 };
-
-                // iOS Safari 特殊处理
-                this.synthesis.cancel(); // 清除之前的语音队列
-                setTimeout(() => {
-                    this.synthesis.speak(utterance);
-                }, 100);
+                setTimeout(() => this.synthesis.speak(utterance), 100);
             });
         } catch (error) {
             return this.fallbackSpeak(text, lang);
         }
     }
 
-    // 回退方案：使用音频 API
     private fallbackSpeak(text: string, lang: string): Promise<void> {
+        const url = `https://translate.google.com/translate_tts?ie=UTF-8&q=${encodeURIComponent(text)}&tl=${lang}&client=tw-ob`;
+        const audio = new Audio();
+
+        Object.assign(audio, {
+            autoplay: false,
+            crossOrigin: "anonymous",
+            src: url
+        });
+
         return new Promise((resolve, reject) => {
-            // 使用 Google TTS API 作为备选
-            const url = `https://translate.google.com/translate_tts?ie=UTF-8&q=${encodeURIComponent(text)}&tl=${lang}&client=tw-ob`;
-            const audio = new Audio();
-
-            // iOS Safari 需要这些设置
-            audio.autoplay = true;
-            audio.crossOrigin = "anonymous";
-            audio.src = url;
-
-            const playHandler = () => {
-                audio.play().catch(error => {
-                    console.error('播放失败:', error);
-                    if (error.name === 'NotAllowedError') {
-                        // 需要用户交互，可以在这里触发 UI 提示
-                        console.log('需要用户交互才能播放音频');
-                    }
-                });
+            const playAudio = () => {
+                const playPromise = audio.play();
+                if (playPromise !== undefined) {
+                    playPromise.catch(error => {
+                        if (error.name === 'NotAllowedError') {
+                            document.addEventListener('touchend', () => {
+                                audio.play().catch(reject);
+                            }, { once: true });
+                        } else {
+                            reject(error);
+                        }
+                    });
+                }
             };
 
-            audio.onended = () => resolve();
-            audio.onerror = (e) => {
-                console.error('音频加载失败:', e);
-                reject(e);
+            audio.onended = () => {
+                audio.remove();
+                resolve();
             };
 
-            // iOS Safari 特殊处理
-            if (this.isIOSDevice()) {
-                audio.load(); // 预加载音频
-                document.addEventListener('touchend', playHandler, { once: true });
+            audio.onerror = () => {
+                audio.remove();
+                reject(new Error('音频加载失败'));
+            };
+
+            audio.load();
+
+            if (this.platform === PLATFORM.IOS) {
+                document.addEventListener('touchend', playAudio, { once: true });
             } else {
-                playHandler();
+                playAudio();
             }
         });
     }
 
-    stop() {
-        if (this.synthesis) {
-            this.synthesis.cancel();
-        }
-    }
+    private async playAudioBuffer(audioData: ArrayBuffer): Promise<void> {
+        const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
+        const source = audioContext.createBufferSource();
 
-    // 预加载语音
-    preloadVoices(): Promise<void> {
-        return new Promise((resolve) => {
-            if (this.synthesis.getVoices().length > 0) {
-                resolve();
-            } else {
-                this.synthesis.onvoiceschanged = () => {
+        return new Promise((resolve, reject) => {
+            audioContext.decodeAudioData(audioData, (buffer) => {
+                source.buffer = buffer;
+                source.connect(audioContext.destination);
+                source.onended = () => {
+                    audioContext.close();
                     resolve();
                 };
-            }
+                source.start(0);
+            }, reject);
         });
     }
 
-    // 检查是否为移动设备
-    private isMobileDevice(): boolean {
-        return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+    private detectPlatform(): Platform {
+        if (/iPhone|iPad|iPod/i.test(navigator.userAgent) ||
+            (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1)) {
+            return PLATFORM.IOS;
+        }
+        if (/Android|webOS|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent)) {
+            return PLATFORM.ANDROID;
+        }
+        return PLATFORM.DESKTOP;
     }
 
-    // 检查是否为 iOS 设备
-    private isIOSDevice(): boolean {
-        return /iPhone|iPad|iPod/i.test(navigator.userAgent) ||
-            (navigator.platform === 'MacIntel' && navigator.maxTouchPoints > 1);
-    }
+    private webSpeechSpeak(text: string, lang: string): Promise<void> {
+        const utterance = new SpeechSynthesisUtterance(text);
+        utterance.lang = lang;
 
-    // 为特定语言找到最佳语音
-    private findBestVoice(voices: SpeechSynthesisVoice[], langCode: string): SpeechSynthesisVoice | null {
-        // 首选本地语音
-        const nativeVoice = voices.find(v => v.lang === langCode && v.localService);
-        if (nativeVoice) return nativeVoice;
-
-        // 其次选择任何匹配语言的语音
-        const matchingVoice = voices.find(v => v.lang === langCode);
-        if (matchingVoice) return matchingVoice;
-
-        // 最后选择匹配语言代码前缀的语音
-        const fallbackVoice = voices.find(v => v.lang.startsWith(langCode.split('-')[0]));
-        if (fallbackVoice) return fallbackVoice;
-
-        // 如果都没有找到，返回第一个可用的语音
-        return voices[0] || null;
-    }
-
-    // 添加一个获取完整语言代码的辅助方法
-    private getFullLanguageCode(lang: string): string {
-        return this.languageMap[lang] || lang;
+        return new Promise((resolve, reject) => {
+            utterance.onend = () => {
+                this.synthesis.cancel();
+                resolve();
+            };
+            utterance.onerror = () => {
+                this.fallbackSpeak(text, lang).then(resolve).catch(reject);
+            };
+            this.synthesis.speak(utterance);
+        });
     }
 } 
