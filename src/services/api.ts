@@ -37,6 +37,14 @@ export class UnifiedApiService {
                     headers: response.headers,
                     data: response.data
                 });
+
+                // 添加 AI 响应内容的详细输出
+                if (response.data.candidates?.[0]?.content?.parts?.[0]?.text) {
+                    console.log('AI Response Content:', response.data.candidates[0].content.parts[0].text);
+                } else if (response.data.choices?.[0]?.message?.content) {
+                    console.log('AI Response Content:', response.data.choices[0].message.content);
+                }
+
                 return response;
             },
             (error) => {
@@ -87,8 +95,12 @@ export class UnifiedApiService {
                 return response.data.choices[0].message.content;
             }
         } catch (error: any) {
-            console.error('Generate text error:', error);
-            throw new Error(error.response?.data?.error?.message || '请求失败，请重试');
+            console.error('Generate text error:', {
+                error,
+                response: error.response?.data,
+                status: error.response?.status
+            });
+            throw new Error(error.response?.data?.error?.message || '生成文本失败，请重试');
         }
     }
 
