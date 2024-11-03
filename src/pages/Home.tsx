@@ -11,6 +11,7 @@ import { useToast } from '../hooks/useToast';
 import RecordingOverlay from '../components/common/RecordingOverlay';
 import ImageTranslator from '../components/ImageTranslator';
 import { useAITranslation } from '../hooks/useAITranslation';
+import { useVoiceRecording } from '../hooks/useVoiceRecording';
 
 const COMMON_LANGUAGES = [
     { code: 'en', name: '英语' },
@@ -29,9 +30,7 @@ const Home = () => {
     const [customLanguage, setCustomLanguage] = useState('');
     const [translation, setTranslation] = useState('');
     const [isLoading, setIsLoading] = useState(false);
-    const [isRecording, setIsRecording] = useState(false);
     const [isProcessing, setIsProcessing] = useState(false);
-    const audioRecorder = useMemo(() => new AudioRecorderService(), []);
     const { apiKey, apiUrl, model } = useSelector((state: RootState) => state.settings);
     const apiService = useMemo(() => new UnifiedApiService(apiUrl, apiKey, model), [apiUrl, apiKey, model]);
 
@@ -42,16 +41,35 @@ const Home = () => {
     // 使用 useToast hook
     const { toast, showToast, hideToast } = useToast();
 
-    // 添加录音时长状态
-    const [recordingDuration, setRecordingDuration] = useState(0);
-    const recordingTimer = useRef<NodeJS.Timeout | null>(null);
-
     const [activeTab, setActiveTab] = useState<'text' | 'image'>('text');
 
-    const { isTranslating, translateText } = useAITranslation({
+    const { isTranslating, translateText, setIsTranslating } = useAITranslation({
         apiService,
         onError: (error) => showToast(error, 'error')
     });
+
+    // 使用 useVoiceRecording 替代 useVoiceInput
+    const {
+        isRecording,
+        recordingDuration,
+        handleVoiceInput,
+        cleanup: cleanupRecording
+    } = useVoiceRecording({
+        apiService,
+        onResult: (text) => {
+            setSourceText(text);
+            handleSubmit(new Event('submit') as any);
+        },
+        onError: (error) => showToast(error, 'error'),
+        setIsTranslating
+    });
+
+    // 组件卸载时清理
+    useEffect(() => {
+        return () => {
+            cleanupRecording();
+        };
+    }, [cleanupRecording]);
 
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
@@ -75,55 +93,6 @@ const Home = () => {
             }));
         }
     };
-
-    // 修改语音输入处理函数
-    const handleVoiceInput = async () => {
-        if (isProcessing) return;
-
-        try {
-            if (!isRecording) {
-                await audioRecorder.startRecording();
-                setIsRecording(true);
-                showToast('开始录音...', 'info');
-
-                // 开始计时
-                setRecordingDuration(0);
-                recordingTimer.current = setInterval(() => {
-                    setRecordingDuration(prev => prev + 1);
-                }, 1000);
-            } else {
-                setIsRecording(false);
-                setIsProcessing(true);
-                showToast('正在处理录音...', 'info');
-
-                // 停止计时
-                if (recordingTimer.current) {
-                    clearInterval(recordingTimer.current);
-                    recordingTimer.current = null;
-                }
-
-                const audioBlob = await audioRecorder.stopRecording();
-                const text = await apiService.processAudio(audioBlob);
-                setSourceText(text);
-                showToast('录音处理完成', 'success');
-                setRecordingDuration(0);
-            }
-        } catch (error) {
-            console.error('Voice input error:', error);
-            showToast(error instanceof Error ? error.message : '录音处理失败', 'error');
-        } finally {
-            setIsProcessing(false);
-        }
-    };
-
-    // 在组件卸载时清理计时器
-    useEffect(() => {
-        return () => {
-            if (recordingTimer.current) {
-                clearInterval(recordingTimer.current);
-            }
-        };
-    }, []);
 
     const handleSpeak = (text: string, language: string) => {
         textToSpeech.speak(text, language);
