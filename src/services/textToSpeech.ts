@@ -1,5 +1,3 @@
-import { VoiceCacheService } from './voiceCache';
-
 const PLATFORM = {
     IOS: 'ios',
     ANDROID: 'android',
@@ -11,23 +9,15 @@ type Platform = typeof PLATFORM[keyof typeof PLATFORM];
 export class TextToSpeechService {
     private synthesis: SpeechSynthesis;
     private platform: Platform;
-    private voiceCache: VoiceCacheService;
 
     constructor() {
         this.synthesis = window.speechSynthesis;
         this.platform = this.detectPlatform();
-        this.voiceCache = new VoiceCacheService();
     }
 
     async speak(text: string, lang: string = 'en'): Promise<void> {
         try {
-            // 1. 检查缓存
-            const cachedVoice = await this.voiceCache.getVoice(text, lang);
-            if (cachedVoice) {
-                return this.playAudioBuffer(cachedVoice);
-            }
-
-            // 2. 根据平台选择播放策略
+            // 根据平台选择播放策略
             switch (this.platform) {
                 case PLATFORM.IOS:
                     return this.speakOnIOS(text, lang);
@@ -113,23 +103,6 @@ export class TextToSpeechService {
             } else {
                 playAudio();
             }
-        });
-    }
-
-    private async playAudioBuffer(audioData: ArrayBuffer): Promise<void> {
-        const audioContext = new (window.AudioContext || (window as any).webkitAudioContext)();
-        const source = audioContext.createBufferSource();
-
-        return new Promise((resolve, reject) => {
-            audioContext.decodeAudioData(audioData, (buffer) => {
-                source.buffer = buffer;
-                source.connect(audioContext.destination);
-                source.onended = () => {
-                    audioContext.close();
-                    resolve();
-                };
-                source.start(0);
-            }, reject);
         });
     }
 
