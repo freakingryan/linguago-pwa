@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { useSelector } from 'react-redux';
 import { RootState } from '../store';
 import { UnifiedApiService } from '../services/api';
@@ -8,8 +8,6 @@ import { v4 as uuidv4 } from 'uuid';
 import { useDispatch } from 'react-redux';
 import { addRecord } from '../store/slices/historySlice';
 import { ImageProcessService } from '../services/imageProcessService';
-import { CacheService } from '../services/cacheService';
-import { debounce } from '../utils/performance';
 
 const COMMON_LANGUAGES = [
     { code: 'en', name: '英语' },
@@ -81,7 +79,6 @@ const ImageTranslator: React.FC = () => {
     });
     const abortControllerRef = useRef<AbortController | null>(null);
     const imageProcessService = useMemo(() => new ImageProcessService(), []);
-    const cacheService = useMemo(() => new CacheService(), []);
 
     // 添加快捷键支持
     useEffect(() => {
@@ -120,16 +117,8 @@ const ImageTranslator: React.FC = () => {
         }
     };
 
-    // 生成缓存键
-    const generateCacheKey = async (file: File): Promise<string> => {
-        const buffer = await file.arrayBuffer();
-        const hashBuffer = await crypto.subtle.digest('SHA-256', buffer);
-        const hashArray = Array.from(new Uint8Array(hashBuffer));
-        return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
-    };
-
     // 处理图片文件
-    const handleImageFile = async (file: File) => {
+    const handleImageFile = useCallback(async (file: File) => {
         const errorMessage = validateImage(file);
         if (errorMessage) {
             showToast(errorMessage, 'error');
@@ -140,27 +129,10 @@ const ImageTranslator: React.FC = () => {
         setTranslationStatus({ stage: 'preparing', progress: 0 });
 
         try {
-            // 生成缓存键
-            const cacheKey = await generateCacheKey(file);
-
-            // 检查缓存
-            const cachedImage = await cacheService.getCachedImage(cacheKey);
-            if (cachedImage) {
-                setSelectedImage(file);
-                setPreviewUrl(cachedImage);
-                setTranslationStatus({ stage: 'idle', progress: 0 });
-                return;
-            }
-
             // 使用 ImageProcessService 处理图片
             const { compressedFile, thumbnail } = await imageProcessService.processImage(file);
-
             setSelectedImage(compressedFile);
             setPreviewUrl(thumbnail);
-
-            // 缓存处理后的图片
-            await cacheService.cacheImage(cacheKey, thumbnail);
-
             setTranslation('');
             setTranslationStatus({ stage: 'idle', progress: 0 });
         } catch (error) {
@@ -169,19 +141,13 @@ const ImageTranslator: React.FC = () => {
         } finally {
             setIsImageLoading(false);
         }
-    };
-
-    // 使用防抖处理图片上传
-    const debouncedHandleImageChange = useMemo(
-        () => debounce((file: File) => handleImageFile(file), 300),
-        [handleImageFile]
-    );
+    }, [imageProcessService, showToast]);
 
     // 修改 handleImageChange
     const handleImageChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
         const file = event.target.files?.[0];
         if (!file) return;
-        await debouncedHandleImageChange(file);
+        await handleImageFile(file);
     };
 
     // 取消翻译
@@ -222,23 +188,6 @@ const ImageTranslator: React.FC = () => {
     const handleTranslate = async () => {
         if (!selectedImage || !apiKey) return;
 
-        // 检查翻译缓存
-        const cacheKey = await generateCacheKey(selectedImage);
-        const targetLang = customLanguage ||
-            COMMON_LANGUAGES.find(lang => lang.code === targetLanguage)?.name ||
-            targetLanguage;
-
-        const cachedTranslation = await cacheService.getCachedTranslation(cacheKey, targetLang);
-        if (cachedTranslation) {
-            const result = parseTranslationResult(cachedTranslation);
-            if (result) {
-                setOcrResult(result.originalText);
-                setDetectedLanguage(result.detectedLanguage);
-                setTranslation(cachedTranslation);
-                return;
-            }
-        }
-
         setIsLoading(true);
         setTranslationStatus({ stage: 'preparing', progress: 20 });
         abortControllerRef.current = new AbortController();
@@ -249,6 +198,10 @@ const ImageTranslator: React.FC = () => {
 
             const apiService = new UnifiedApiService(apiUrl, apiKey, model);
             setTranslationStatus({ stage: 'translating', progress: 60 });
+
+            const targetLang = customLanguage ||
+                COMMON_LANGUAGES.find(lang => lang.code === targetLanguage)?.name ||
+                targetLanguage;
 
             // 添加提示词
             const prompt = `Please analyze this image and translate any text content you find into ${targetLang}. 
@@ -263,16 +216,13 @@ const ImageTranslator: React.FC = () => {
             5. Ensure accurate translation while maintaining the original structure
             6. Handle any special characters or formatting appropriately`;
 
-            // 翻译阶段
-            setTranslationStatus({ stage: 'translating', progress: 60 });
             const response = await apiService.generateImageContent(
                 prompt,
                 base64Data,
                 selectedImage.type
             );
 
-            // 缓存翻译结果
-            await cacheService.cacheTranslation(cacheKey, targetLang, response);
+            console.log('API Response:', response);
 
             setTranslationStatus({ stage: 'done', progress: 100 });
             const result = parseTranslationResult(response);
