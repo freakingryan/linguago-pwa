@@ -4,6 +4,7 @@ import Home from '../pages/Home';
 import Settings from '../pages/Settings';
 import History from '../pages/History';
 import Conversation from '../pages/Conversation';
+import ConversationHistory from '../pages/ConversationHistory';
 import ErrorBoundary from '../components/ErrorBoundary';
 
 export const router = createHashRouter([
@@ -27,6 +28,10 @@ export const router = createHashRouter([
             {
                 path: 'conversation',
                 element: <Conversation />,
+            },
+            {
+                path: 'conversation-history',
+                element: <ConversationHistory />,
             },
         ],
     },

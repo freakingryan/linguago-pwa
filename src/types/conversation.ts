@@ -9,6 +9,14 @@ export interface ConversationMessage {
     isEdited: boolean;
 }
 
+export interface ConversationRecord {
+    id: string;
+    messages: ConversationMessage[];
+    timestamp: number;
+    startTime: number;
+    endTime: number;
+}
+
 export interface ConversationState {
     messages: ConversationMessage[];
     firstLang: string;

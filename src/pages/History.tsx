@@ -5,6 +5,8 @@ import { TextToSpeechService } from '../services/textToSpeech';
 import { useMemo, useState } from 'react';
 import { useToast } from '../hooks/useToast';
 import Toast from '../components/common/Toast';
+import { Link } from 'react-router-dom';
+
 
 const COMMON_LANGUAGES = [
     { code: 'en', name: '英语' },
@@ -128,6 +130,16 @@ const History = () => {
                                 </svg>
                             </button>
                         )}
+                        {/* 右侧对话历史入口 */}
+                        <Link
+                            to="/conversation-history"
+                            className="px-4 py-2 rounded-lg bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-200 hover:bg-gray-200 dark:hover:bg-gray-600 transition-colors flex items-center gap-2"
+                        >
+                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" />
+                            </svg>
+                            对话历史
+                        </Link>
                     </div>
                 </div>
             </div>
