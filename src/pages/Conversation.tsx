@@ -13,6 +13,7 @@ import { useVoiceRecording } from '../hooks/useVoiceRecording';
 import ProcessingOverlay from '../components/common/ProcessingOverlay';
 import { useAITranslation } from '../hooks/useAITranslation';
 import { useDispatch } from 'react-redux';
+import { IndexedDBService } from '../services/indexedDB';
 
 // 添加常用语言列表
 const COMMON_LANGUAGES = [
@@ -56,6 +57,7 @@ const Conversation: React.FC = () => {
         lang: string;
     } | null>(null);
     const dispatch = useDispatch();
+    const indexedDBService = useMemo(() => new IndexedDBService(), []);
 
     const { translateText } = useAITranslation({
         apiService,
@@ -107,6 +109,35 @@ const Conversation: React.FC = () => {
         }
     }, [locationService, showToast]);
 
+    // 组件加载时加载保存的对话
+    useEffect(() => {
+        indexedDBService.getCurrentConversation()
+            .then(savedMessages => {
+                if (savedMessages && savedMessages.length > 0) {
+                    console.log('Loaded saved messages:', savedMessages);
+                    setMessages(savedMessages);
+                } else {
+                    console.log('No saved messages found');
+                }
+            })
+            .catch(error => {
+                console.error('Failed to load conversation:', error);
+                // 不显示错误提示，因为这是正常情况
+            });
+    }, []);
+
+    // 当消息更新时保存到 IndexedDB
+    useEffect(() => {
+        if (messages.length > 0) {
+            indexedDBService.saveCurrentConversation(messages)
+                .catch(error => {
+                    console.error('Failed to save conversation:', error);
+                    showToast('保存对话失败', 'error');
+                });
+        }
+    }, [messages]);
+
+    // 修改 handleTranslation 函数
     const handleTranslation = useCallback(async (text: string, mode: 'source' | 'target' = 'source') => {
         if (!text) return;
 
@@ -115,41 +146,24 @@ const Conversation: React.FC = () => {
             : (showSourceCustomInput ? sourceCustomLang : sourceLang);
 
         try {
-            // 添加新消息到列表中，但先不显示翻译结果
-            const messageId = uuidv4();
-            const pendingMessage: ConversationMessage = {
-                id: messageId,
-                text,
-                translation: '翻译中...', // 临时占位
-                sourceLang: 'detecting',
-                sourceLangName: '检测中',
-                targetLang: targetLanguage,
-                timestamp: Date.now(),
-                isEdited: false
-            };
-
-            // 立即添加消息到列表
-            setMessages(prev => [...prev, pendingMessage]);
-
-            // 获取翻译结果
             const result = await translateText(text, targetLanguage, { formatAsJson: true }) as TranslationResult | null;
 
             if (result) {
-                // 更新已存在的消息
-                setMessages(prev => prev.map(msg =>
-                    msg.id === messageId
-                        ? {
-                            ...msg,
-                            translation: result.translation,
-                            sourceLang: result.detectedLang,
-                            sourceLangName: result.sourceLangName,
-                        }
-                        : msg
-                ));
+                const newMessage: ConversationMessage = {
+                    id: uuidv4(),
+                    text,
+                    translation: result.translation,
+                    sourceLang: result.detectedLang,
+                    sourceLangName: result.sourceLangName,
+                    targetLang: targetLanguage,
+                    timestamp: Date.now(),
+                    isEdited: false
+                };
+
+                setMessages(prev => [...prev, newMessage]);
             }
         } catch (error) {
-            // 如果出错，移除临时消息
-            setMessages(prev => prev.filter(msg => msg.text !== text));
+            showToast('翻译失败，请重试', 'error');
         }
     }, [
         targetLang,
@@ -158,7 +172,8 @@ const Conversation: React.FC = () => {
         targetCustomLang,
         showSourceCustomInput,
         showTargetCustomInput,
-        translateText
+        translateText,
+        showToast
     ]);
 
     // 修改 handleVoiceResult 函数
