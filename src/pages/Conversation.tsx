@@ -14,6 +14,7 @@ import ProcessingOverlay from '../components/common/ProcessingOverlay';
 import { useAITranslation } from '../hooks/useAITranslation';
 import { useDispatch } from 'react-redux';
 import { IndexedDBService } from '../services/indexedDB';
+import { saveCurrentConversation } from '../store/slices/conversationHistorySlice';
 
 // 添加常用语言列表
 const COMMON_LANGUAGES = [
@@ -241,6 +242,29 @@ const Conversation: React.FC = () => {
             cleanupRecording();
         };
     }, [cleanupRecording]);
+
+    // 处理重置对话
+    const handleResetConversation = useCallback(() => {
+        if (messages.length > 0) {
+            // 保存当前对话到历史记录
+            dispatch(saveCurrentConversation({
+                id: uuidv4(),
+                messages: [...messages],
+                timestamp: Date.now(),
+                startTime: messages[0].timestamp,
+                endTime: messages[messages.length - 1].timestamp
+            }));
+
+            // 清空当前对话
+            setMessages([]);
+
+            // 清空 IndexedDB 中的当前对话
+            indexedDBService.saveCurrentConversation([])
+                .catch(error => {
+                    console.error('Failed to clear current conversation:', error);
+                });
+        }
+    }, [dispatch, messages]);
 
     return (
         <div className="max-w-2xl mx-auto p-4 space-y-4">
@@ -629,6 +653,19 @@ const Conversation: React.FC = () => {
                     </span>
                 </button>
             </div>
+
+            {/* 重置对话按钮 */}
+            {messages.length > 0 && (
+                <button
+                    onClick={handleResetConversation}
+                    className="fixed bottom-6 right-6 p-3 bg-blue-600 text-white rounded-full hover:bg-blue-700 transition-colors shadow-lg"
+                    title="保存并开始新对话"
+                >
+                    <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                    </svg>
+                </button>
+            )}
         </div>
     );
 };
