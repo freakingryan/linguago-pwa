@@ -8,6 +8,7 @@ import Toast from '../components/common/Toast';
 import { useToast } from '../hooks/useToast';
 import { useVoiceInput } from '../hooks/useVoiceInput';
 import { useVoicePlayer } from '../hooks/useVoicePlayer';
+import { LocationService } from '../services/locationService';
 
 // 添加常用语言列表
 const COMMON_LANGUAGES = [
@@ -36,6 +37,28 @@ const Conversation: React.FC = () => {
     const { toast, showToast, hideToast } = useToast();
     const apiService = useMemo(() => new UnifiedApiService(apiUrl, apiKey, model), [apiUrl, apiKey, model]);
     const { playVoice } = useVoicePlayer();
+    const [isDetectingLocation, setIsDetectingLocation] = useState(false);
+    const [showLanguageInput, setShowLanguageInput] = useState(false);
+    const locationService = useMemo(() => new LocationService(), []);
+
+    // 添加地理位置检测函数
+    const detectLocation = useCallback(async () => {
+        setIsDetectingLocation(true);
+        try {
+            const detectedLanguage = await locationService.detectLanguage();
+            if (detectedLanguage) {
+                setTargetLang(detectedLanguage.code);
+                setCustomLang('');
+                showToast(`已设置为${detectedLanguage.name}`, 'success');
+            } else {
+                showToast('无法检测当前位置语言，请手动选择', 'error');
+            }
+        } catch (error) {
+            showToast('语言检测失败，请手动选择', 'error');
+        } finally {
+            setIsDetectingLocation(false);
+        }
+    }, [locationService, showToast]);
 
     // 处理语音或文本输入的翻译
     const handleTranslate = useCallback(async (text: string) => {
@@ -102,7 +125,7 @@ Important: Return ONLY the JSON object, no markdown formatting or other text.`;
         handleTranslate(text);
     }, [handleTranslate]);
 
-    // 处理文本输入提交
+    // 处理文本输入提��
     const handleSubmit = useCallback((e: React.FormEvent) => {
         e.preventDefault();
         handleTranslate(inputText);
@@ -144,56 +167,71 @@ Important: Return ONLY the JSON object, no markdown formatting or other text.`;
                 />
             )}
 
-            {/* 目标语言选择 */}
-            <div className="bg-white dark:bg-gray-800 p-4 rounded-lg shadow space-y-4">
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300">
-                    翻译成
-                </label>
-
-                {/* 常用语言快速选择 */}
-                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2">
-                    {COMMON_LANGUAGES.map((lang) => (
-                        <button
-                            key={lang.code}
-                            onClick={() => {
-                                setTargetLang(lang.code);
-                                setCustomLang('');
-                            }}
-                            className={`px-3 py-2 text-sm rounded-md transition-colors ${targetLang === lang.code && !customLang
-                                ? 'bg-blue-600 text-white'
-                                : 'bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-200 hover:bg-gray-200 dark:hover:bg-gray-600'
-                                }`}
-                        >
-                            {lang.name}
-                        </button>
-                    ))}
-                </div>
-
-                {/* 自定义语言输入 */}
-                <div className="relative">
-                    <input
-                        type="text"
-                        value={customLang}
-                        onChange={(e) => {
-                            setCustomLang(e.target.value);
-                            setTargetLang('');
-                        }}
-                        placeholder="或输入其他语言（如：西班牙语、德语等）"
-                        className="w-full p-2 pr-8 border rounded-md dark:bg-gray-700 dark:border-gray-600 dark:text-white"
-                    />
-                    {customLang && (
-                        <button
-                            onClick={() => {
-                                setCustomLang('');
-                                setTargetLang('en');  // 重置为默认语言
-                            }}
-                            className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200"
-                        >
+            {/* 语言选择区域 - 优化后的界面 */}
+            <div className="bg-white dark:bg-gray-800 p-4 rounded-lg shadow">
+                <div className="flex items-center gap-4">
+                    <button
+                        onClick={detectLocation}
+                        disabled={isDetectingLocation}
+                        className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-400 transition-colors"
+                    >
+                        {isDetectingLocation ? (
+                            <div className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent" />
+                        ) : (
                             <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
                             </svg>
-                        </button>
-                    )}
+                        )}
+                        自动检测语言
+                    </button>
+
+                    <div className="flex-1 relative">
+                        {showLanguageInput ? (
+                            <div className="flex items-center gap-2">
+                                <input
+                                    type="text"
+                                    value={customLang}
+                                    onChange={(e) => {
+                                        setCustomLang(e.target.value);
+                                        setTargetLang('');
+                                    }}
+                                    placeholder="输入目标语言..."
+                                    className="flex-1 px-3 py-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                                />
+                                <button
+                                    onClick={() => setShowLanguageInput(false)}
+                                    className="p-2 text-gray-500 hover:text-gray-700 dark:text-gray-400"
+                                >
+                                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                                    </svg>
+                                </button>
+                            </div>
+                        ) : (
+                            <div className="flex items-center gap-2">
+                                <select
+                                    value={targetLang}
+                                    onChange={(e) => {
+                                        setTargetLang(e.target.value);
+                                        setCustomLang('');
+                                    }}
+                                    className="flex-1 px-3 py-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                                >
+                                    <option value="">选择语言</option>
+                                    {COMMON_LANGUAGES.map(lang => (
+                                        <option key={lang.code} value={lang.code}>{lang.name}</option>
+                                    ))}
+                                </select>
+                                <button
+                                    onClick={() => setShowLanguageInput(true)}
+                                    className="text-sm text-blue-600 hover:text-blue-700 dark:text-blue-400"
+                                >
+                                    输入其他语言
+                                </button>
+                            </div>
+                        )}
+                    </div>
                 </div>
             </div>
 
@@ -235,8 +273,8 @@ Important: Return ONLY the JSON object, no markdown formatting or other text.`;
                     <div
                         key={message.id}
                         className={`bg-white dark:bg-gray-800 p-4 rounded-lg shadow transition-all duration-300 ${index === 0  // 因为已经反转，所以最新的消息索引是 0
-                                ? 'border-2 border-blue-500 dark:border-blue-400 transform -translate-y-1 scale-102'
-                                : 'border border-gray-200 dark:border-gray-700 opacity-80'
+                            ? 'border-2 border-blue-500 dark:border-blue-400 transform -translate-y-1 scale-102'
+                            : 'border border-gray-200 dark:border-gray-700 opacity-80'
                             }`}
                     >
                         <div className="flex justify-between items-start mb-2">
