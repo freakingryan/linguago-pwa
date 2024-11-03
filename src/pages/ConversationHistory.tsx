@@ -1,11 +1,28 @@
-import React, { useState } from 'react';
-import { useSelector } from 'react-redux';
+import React, { useState, useEffect } from 'react';
+import { useSelector, useDispatch } from 'react-redux';
 import { RootState } from '../store';
 import { ConversationRecord } from '../types/conversation';
+import { useIndexedDB } from '../hooks/useIndexedDB';
+import { setConversationRecords } from '../store/slices/conversationHistorySlice';
 
 const ConversationHistory: React.FC = () => {
+    const dispatch = useDispatch();
     const records = useSelector((state: RootState) => state.conversationHistory.records);
+    const { getAllConversations } = useIndexedDB();
     const [selectedConversation, setSelectedConversation] = useState<ConversationRecord | null>(null);
+
+    // 每次进入页面都重新加载历史记录
+    useEffect(() => {
+        getAllConversations()
+            .then(conversations => {
+                if (Array.isArray(conversations)) {
+                    dispatch(setConversationRecords(conversations));
+                }
+            })
+            .catch(error => {
+                console.error('Failed to load conversation history:', error);
+            });
+    }, [dispatch, getAllConversations]);
 
     // 对话详情弹窗
     const renderConversationDetail = () => {

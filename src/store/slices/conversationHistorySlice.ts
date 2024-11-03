@@ -13,8 +13,11 @@ const conversationHistorySlice = createSlice({
     name: 'conversationHistory',
     initialState,
     reducers: {
-        saveCurrentConversation: (state, action: PayloadAction<ConversationRecord>) => {
+        addConversationRecord: (state, action: PayloadAction<ConversationRecord>) => {
             state.records.unshift(action.payload);
+        },
+        setConversationRecords: (state, action: PayloadAction<ConversationRecord[]>) => {
+            state.records = action.payload;
         },
         deleteConversationRecords: (state, action: PayloadAction<string[]>) => {
             state.records = state.records.filter(record => !action.payload.includes(record.id));
@@ -26,7 +29,8 @@ const conversationHistorySlice = createSlice({
 });
 
 export const {
-    saveCurrentConversation,
+    addConversationRecord,
+    setConversationRecords,
     deleteConversationRecords,
     clearConversationHistory
 } = conversationHistorySlice.actions;
