@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { useSelector } from 'react-redux';
 import { RootState } from '../store';
 import { UnifiedApiService } from '../services/api';
@@ -7,6 +7,9 @@ import { useToast } from '../hooks/useToast';
 import { v4 as uuidv4 } from 'uuid';
 import { useDispatch } from 'react-redux';
 import { addRecord } from '../store/slices/historySlice';
+import { ImageProcessService } from '../services/imageProcessService';
+import { CacheService } from '../services/cacheService';
+import { debounce } from '../utils/performance';
 
 const COMMON_LANGUAGES = [
     { code: 'en', name: '英语' },
@@ -77,6 +80,8 @@ const ImageTranslator: React.FC = () => {
         progress: 0
     });
     const abortControllerRef = useRef<AbortController | null>(null);
+    const imageProcessService = useMemo(() => new ImageProcessService(), []);
+    const cacheService = useMemo(() => new CacheService(), []);
 
     // 添加快捷键支持
     useEffect(() => {
@@ -115,6 +120,14 @@ const ImageTranslator: React.FC = () => {
         }
     };
 
+    // 生成缓存键
+    const generateCacheKey = async (file: File): Promise<string> => {
+        const buffer = await file.arrayBuffer();
+        const hashBuffer = await crypto.subtle.digest('SHA-256', buffer);
+        const hashArray = Array.from(new Uint8Array(hashBuffer));
+        return hashArray.map(b => b.toString(16).padStart(2, '0')).join('');
+    };
+
     // 处理图片文件
     const handleImageFile = async (file: File) => {
         const errorMessage = validateImage(file);
@@ -127,17 +140,48 @@ const ImageTranslator: React.FC = () => {
         setTranslationStatus({ stage: 'preparing', progress: 0 });
 
         try {
-            const compressedFile = await compressImage(file);
+            // 生成缓存键
+            const cacheKey = await generateCacheKey(file);
+
+            // 检查缓存
+            const cachedImage = await cacheService.getCachedImage(cacheKey);
+            if (cachedImage) {
+                setSelectedImage(file);
+                setPreviewUrl(cachedImage);
+                setTranslationStatus({ stage: 'idle', progress: 0 });
+                return;
+            }
+
+            // 使用 ImageProcessService 处理图片
+            const { compressedFile, thumbnail } = await imageProcessService.processImage(file);
+
             setSelectedImage(compressedFile);
-            const url = URL.createObjectURL(compressedFile);
-            setPreviewUrl(url);
+            setPreviewUrl(thumbnail);
+
+            // 缓存处理后的图片
+            await cacheService.cacheImage(cacheKey, thumbnail);
+
             setTranslation('');
             setTranslationStatus({ stage: 'idle', progress: 0 });
         } catch (error) {
+            console.error('Image processing error:', error);
             showToast('图片处理失败', 'error');
         } finally {
             setIsImageLoading(false);
         }
+    };
+
+    // 使用防抖处理图片上传
+    const debouncedHandleImageChange = useMemo(
+        () => debounce((file: File) => handleImageFile(file), 300),
+        [handleImageFile]
+    );
+
+    // 修改 handleImageChange
+    const handleImageChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
+        const file = event.target.files?.[0];
+        if (!file) return;
+        await debouncedHandleImageChange(file);
     };
 
     // 取消翻译
@@ -162,93 +206,6 @@ const ImageTranslator: React.FC = () => {
         return null;
     };
 
-    // 图片压缩函数
-    const compressImage = async (file: File): Promise<File> => {
-        return new Promise((resolve, reject) => {
-            const img = new Image();
-            const url = URL.createObjectURL(file);
-
-            img.onload = () => {
-                URL.revokeObjectURL(url); // 释放URL
-                const canvas = document.createElement('canvas');
-                const ctx = canvas.getContext('2d')!;
-
-                // 计算压缩后的尺寸
-                let { width, height } = img;
-                if (width > IMAGE_CONFIG.MAX_DIMENSION || height > IMAGE_CONFIG.MAX_DIMENSION) {
-                    if (width > height) {
-                        height = Math.round((height * IMAGE_CONFIG.MAX_DIMENSION) / width);
-                        width = IMAGE_CONFIG.MAX_DIMENSION;
-                    } else {
-                        width = Math.round((width * IMAGE_CONFIG.MAX_DIMENSION) / height);
-                        height = IMAGE_CONFIG.MAX_DIMENSION;
-                    }
-                }
-
-                // 设置canvas尺寸
-                canvas.width = width;
-                canvas.height = height;
-
-                // 绘制图片
-                ctx.drawImage(img, 0, 0, width, height);
-
-                // 转换为blob
-                canvas.toBlob(
-                    (blob) => {
-                        if (!blob) {
-                            reject(new Error('图片压缩失败'));
-                            return;
-                        }
-                        // 创建新的File对象
-                        const compressedFile = new File(
-                            [blob],
-                            file.name,
-                            { type: file.type }
-                        );
-                        resolve(compressedFile);
-                    },
-                    file.type,
-                    IMAGE_CONFIG.COMPRESSION_QUALITY
-                );
-            };
-
-            img.onerror = () => {
-                URL.revokeObjectURL(url);
-                reject(new Error('图片加载失败'));
-            };
-
-            img.src = url;
-        });
-    };
-
-    // 处理图片选择
-    const handleImageChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
-        const file = event.target.files?.[0];
-        if (!file) return;
-
-        // 验证图片
-        const errorMessage = validateImage(file);
-        if (errorMessage) {
-            showToast(errorMessage, 'error');
-            return;
-        }
-
-        setIsImageLoading(true);
-        try {
-            // 压缩图片
-            const compressedFile = await compressImage(file);
-            setSelectedImage(compressedFile);
-            const url = URL.createObjectURL(compressedFile);
-            setPreviewUrl(url);
-            setTranslation('');
-        } catch (error) {
-            showToast('图片���理失败', 'error');
-            console.error('Image processing error:', error);
-        } finally {
-            setIsImageLoading(false);
-        }
-    };
-
     const convertToBase64 = (file: File): Promise<string> => {
         return new Promise((resolve, reject) => {
             const reader = new FileReader();
@@ -265,22 +222,33 @@ const ImageTranslator: React.FC = () => {
     const handleTranslate = async () => {
         if (!selectedImage || !apiKey) return;
 
+        // 检查翻译缓存
+        const cacheKey = await generateCacheKey(selectedImage);
+        const targetLang = customLanguage ||
+            COMMON_LANGUAGES.find(lang => lang.code === targetLanguage)?.name ||
+            targetLanguage;
+
+        const cachedTranslation = await cacheService.getCachedTranslation(cacheKey, targetLang);
+        if (cachedTranslation) {
+            const result = parseTranslationResult(cachedTranslation);
+            if (result) {
+                setOcrResult(result.originalText);
+                setDetectedLanguage(result.detectedLanguage);
+                setTranslation(cachedTranslation);
+                return;
+            }
+        }
+
         setIsLoading(true);
-        setTranslationStatus({ stage: 'preparing', progress: 0 });
+        setTranslationStatus({ stage: 'preparing', progress: 20 });
         abortControllerRef.current = new AbortController();
 
         try {
-            // 准备阶段
-            setTranslationStatus({ stage: 'preparing', progress: 20 });
             const base64Data = await convertToBase64(selectedImage);
-
-            // 上传阶段
             setTranslationStatus({ stage: 'uploading', progress: 40 });
-            const apiService = new UnifiedApiService(apiUrl, apiKey, model);
 
-            const targetLang = customLanguage ||
-                COMMON_LANGUAGES.find(lang => lang.code === targetLanguage)?.name ||
-                targetLanguage;
+            const apiService = new UnifiedApiService(apiUrl, apiKey, model);
+            setTranslationStatus({ stage: 'translating', progress: 60 });
 
             // 添加提示词
             const prompt = `Please analyze this image and translate any text content you find into ${targetLang}. 
@@ -303,7 +271,9 @@ const ImageTranslator: React.FC = () => {
                 selectedImage.type
             );
 
-            // 完成阶段
+            // 缓存翻译结果
+            await cacheService.cacheTranslation(cacheKey, targetLang, response);
+
             setTranslationStatus({ stage: 'done', progress: 100 });
             const result = parseTranslationResult(response);
             if (result) {
@@ -311,7 +281,8 @@ const ImageTranslator: React.FC = () => {
                 setDetectedLanguage(result.detectedLanguage);
                 setTranslation(response);
 
-                const compressedImageUrl = await getCompressedImageUrl(selectedImage);
+                // 保存到历史记录
+                const thumbnail = await imageProcessService.generateThumbnail(selectedImage);
                 dispatch(addRecord({
                     id: uuidv4(),
                     type: 'image',
@@ -320,7 +291,7 @@ const ImageTranslator: React.FC = () => {
                     sourceLang: result.detectedLanguage,
                     targetLang: targetLanguage || customLanguage,
                     timestamp: Date.now(),
-                    imageUrl: compressedImageUrl
+                    imageUrl: thumbnail
                 }));
             }
         } catch (error: any) {
@@ -336,33 +307,6 @@ const ImageTranslator: React.FC = () => {
                 setTranslationStatus({ stage: 'idle', progress: 0 });
             }, 1000);
         }
-    };
-
-    // 添加图片压缩函数
-    const getCompressedImageUrl = async (file: File): Promise<string> => {
-        const canvas = document.createElement('canvas');
-        const ctx = canvas.getContext('2d')!;
-        const img = await createImageBitmap(file);
-
-        // 计算压缩后的尺寸
-        let { width, height } = img;
-        const maxSize = 400; // 缩略图最大尺寸
-
-        if (width > maxSize || height > maxSize) {
-            if (width > height) {
-                height = Math.round((height * maxSize) / width);
-                width = maxSize;
-            } else {
-                width = Math.round((width * maxSize) / height);
-                height = maxSize;
-            }
-        }
-
-        canvas.width = width;
-        canvas.height = height;
-        ctx.drawImage(img, 0, 0, width, height);
-
-        return canvas.toDataURL('image/jpeg', 0.7);
     };
 
     // 修改图片预览部分
@@ -425,7 +369,7 @@ const ImageTranslator: React.FC = () => {
         );
     };
 
-    // 渲染进度指示器
+    // 修改进度指示器渲染函数
     const renderProgress = () => {
         if (translationStatus.stage === 'idle') return null;
 
@@ -436,30 +380,70 @@ const ImageTranslator: React.FC = () => {
             done: '完成'
         }[translationStatus.stage];
 
+        const radius = 40;
+        const circumference = 2 * Math.PI * radius;
+        const progress = translationStatus.progress;
+        const offset = circumference - (progress / 100) * circumference;
+
         return (
             <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-                <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-xl max-w-sm w-full mx-4">
-                    <div className="space-y-4">
-                        <div className="relative h-2 bg-gray-200 rounded-full overflow-hidden">
-                            <div
-                                className="absolute left-0 top-0 h-full bg-blue-500 transition-all duration-300"
-                                style={{ width: `${translationStatus.progress}%` }}
-                            />
+                <div className="bg-white dark:bg-gray-800 p-8 rounded-lg shadow-xl max-w-sm w-full mx-4">
+                    <div className="flex flex-col items-center space-y-4">
+                        {/* 圆形进度条 */}
+                        <div className="relative w-32 h-32">
+                            {/* 背景圆环 */}
+                            <svg className="w-full h-full -rotate-90 transform">
+                                <circle
+                                    className="text-gray-200 dark:text-gray-700"
+                                    strokeWidth="8"
+                                    stroke="currentColor"
+                                    fill="transparent"
+                                    r={radius}
+                                    cx="64"
+                                    cy="64"
+                                />
+                                {/* 进度圆环 */}
+                                <circle
+                                    className="text-blue-500 transition-all duration-300"
+                                    strokeWidth="8"
+                                    strokeDasharray={circumference}
+                                    strokeDashoffset={offset}
+                                    strokeLinecap="round"
+                                    stroke="currentColor"
+                                    fill="transparent"
+                                    r={radius}
+                                    cx="64"
+                                    cy="64"
+                                />
+                            </svg>
+                            {/* 中间的进度文字 */}
+                            <div className="absolute inset-0 flex items-center justify-center">
+                                <span className="text-2xl font-semibold text-gray-700 dark:text-gray-200">
+                                    {progress}%
+                                </span>
+                            </div>
                         </div>
-                        <div className="flex justify-between items-center">
-                            <span className="text-sm text-gray-600 dark:text-gray-300">
+
+                        {/* 状态文本 */}
+                        <div className="text-center space-y-2">
+                            <p className="text-lg font-medium text-gray-700 dark:text-gray-200">
                                 {stageText}
-                            </span>
-                            <span className="text-sm font-medium text-gray-700 dark:text-gray-200">
-                                {translationStatus.progress}%
-                            </span>
+                            </p>
+                            <p className="text-sm text-gray-500 dark:text-gray-400">
+                                请耐心等待...
+                            </p>
                         </div>
+
+                        {/* 取消按钮 */}
                         {isLoading && (
                             <button
                                 onClick={handleCancelTranslation}
-                                className="w-full py-2 px-4 bg-red-600 text-white rounded hover:bg-red-700 transition-colors"
+                                className="mt-4 w-full py-2 px-4 bg-red-600 hover:bg-red-700 text-white rounded-md transition-colors duration-200 flex items-center justify-center space-x-2"
                             >
-                                取消翻译
+                                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                                </svg>
+                                <span>取消翻译</span>
                             </button>
                         )}
                     </div>
