@@ -6,7 +6,6 @@ import { v4 as uuidv4 } from 'uuid';
 import { ConversationMessage } from '../types/conversation';
 import Toast from '../components/common/Toast';
 import { useToast } from '../hooks/useToast';
-// import { useVoiceInput } from '../hooks/useVoiceInput';
 import { useVoicePlayer } from '../hooks/useVoicePlayer';
 import { LocationService } from '../services/locationService';
 import RecordingOverlay from '../components/common/RecordingOverlay';
@@ -28,15 +27,11 @@ const COMMON_LANGUAGES = [
 const Conversation: React.FC = () => {
     const { apiKey, apiUrl, model } = useSelector((state: RootState) => state.settings);
     const [messages, setMessages] = useState<ConversationMessage[]>([]);
-    const [inputText, setInputText] = useState('');
     const { toast, showToast, hideToast } = useToast();
     const apiService = useMemo(() => new UnifiedApiService(apiUrl, apiKey, model), [apiUrl, apiKey, model]);
     const { playVoice } = useVoicePlayer();
     const [isDetectingLocation, setIsDetectingLocation] = useState(false);
     const locationService = useMemo(() => new LocationService(), []);
-    const [showTextInput, setShowTextInput] = useState(false);
-    // const [isProcessing, setIsProcessing] = useState(false);
-    const [processingStage, setProcessingStage] = useState<'recognizing' | 'translating'>('recognizing');
     const [editingMessage, setEditingMessage] = useState<ConversationMessage | null>(null);
     const [editingText, setEditingText] = useState('');
     const [sourceLang, setSourceLang] = useState('zh');
@@ -50,8 +45,6 @@ const Conversation: React.FC = () => {
         text: string;
         lang: string;
     } | null>(null);
-    // const [isRecording, setIsRecording] = useState(false);
-    // const [recordingDuration, setRecordingDuration] = useState(0);
 
     // 获取语言显示名称
     const getLanguageDisplay = useCallback((langCode: string, customLang: string, isSource: boolean) => {
@@ -97,78 +90,12 @@ const Conversation: React.FC = () => {
         }
     }, [locationService, showToast]);
 
-    // 处理语音或文本输入的翻译
-    const handleTranslate = useCallback(async (text: string) => {
+    const handleTranslation = useCallback(async (text: string, mode: 'source' | 'target' = 'source') => {
         if (!text) return;
 
         try {
-            const targetLanguage = showTargetCustomInput ? targetCustomLang : targetLang;
-            const prompt = `Please perform the following tasks:
-1. Detect the language of this text: "${text}"
-2. Translate it to ${targetLanguage}
-3. Format the response as JSON:
-{
-    "detectedLang": "detected language code",
-    "sourceLangName": "language name in Chinese",
-    "translation": "translated text"
-}
-Important: Return ONLY the JSON object, no markdown formatting or other text.`;
-
-            const response = await apiService.generateText(prompt);
-            console.log('Raw response:', response);
-
-            // 清理响应内容，移除可能的 markdown 格式
-            const jsonStr = response.replace(/```json\n?|\n?```/g, '').trim();
-            console.log('Cleaned JSON string:', jsonStr);
-
-            try {
-                const result = JSON.parse(jsonStr);
-                console.log('Parsed result:', result);
-
-                if (!result.detectedLang || !result.sourceLangName || !result.translation) {
-                    throw new Error('Invalid response format');
-                }
-
-                const newMessage: ConversationMessage = {
-                    id: uuidv4(),
-                    text,
-                    translation: result.translation,
-                    sourceLang: result.detectedLang,
-                    sourceLangName: result.sourceLangName,
-                    targetLang: targetLanguage,
-                    timestamp: Date.now(),
-                    isEdited: false
-                };
-
-                setMessages(prev => [...prev, newMessage]);
-                setInputText('');
-            } catch (parseError) {
-                console.error('Failed to parse response:', parseError);
-                console.log('Response that failed to parse:', jsonStr);
-                showToast('翻译结果格式错误，请重试', 'error');
-                return;
-            }
-        } catch (error) {
-            console.error('Translation error:', error);
-            if (error instanceof Error) {
-                showToast(error.message || '翻译失败，请重试', 'error');
-            } else {
-                showToast('翻译失败，请重试', 'error');
-            }
-        }
-    }, [targetLang, targetCustomLang, showTargetCustomInput, apiService, showToast]);
-
-    // 处理语音输入结果
-    const handleVoiceResult = useCallback(async (text: string) => {
-        if (!text) return;
-
-        try {
-            // 根据当前模式决定源语言和目标语言
-            const sourceLanguage = currentMode === 'source'
-                ? (showSourceCustomInput ? sourceCustomLang : sourceLang)
-                : (showTargetCustomInput ? targetCustomLang : targetLang);
-
-            const targetLanguage = currentMode === 'source'
+            // 根据当前模式决定目标语言
+            const targetLanguage = mode === 'source'
                 ? (showTargetCustomInput ? targetCustomLang : targetLang)
                 : (showSourceCustomInput ? sourceCustomLang : sourceLang);
 
@@ -184,45 +111,32 @@ Important: Return ONLY the JSON object, no markdown formatting or other text.`;
 Important: Return ONLY the JSON object, no markdown formatting or other text.`;
 
             const response = await apiService.generateText(prompt);
-            console.log('Raw response:', response);
-
-            // 清理响应内容，移除可能的 markdown 格式
             const jsonStr = response.replace(/```json\n?|\n?```/g, '').trim();
-            console.log('Cleaned JSON string:', jsonStr);
+            const result = JSON.parse(jsonStr);
 
-            try {
-                const result = JSON.parse(jsonStr);
-                console.log('Parsed result:', result);
-
-                if (!result.detectedLang || !result.sourceLangName || !result.translation) {
-                    throw new Error('Invalid response format');
-                }
-
-                const newMessage: ConversationMessage = {
-                    id: uuidv4(),
-                    text,
-                    translation: result.translation,
-                    sourceLang: result.detectedLang,
-                    sourceLangName: result.sourceLangName,
-                    targetLang: targetLanguage,
-                    timestamp: Date.now(),
-                    isEdited: false
-                };
-
-                setMessages(prev => [...prev, newMessage]);
-            } catch (parseError) {
-                console.error('Failed to parse response:', parseError);
-                console.log('Response that failed to parse:', jsonStr);
-                showToast('翻译结果格式错误，请重试', 'error');
+            if (!result.detectedLang || !result.sourceLangName || !result.translation) {
+                throw new Error('Invalid response format');
             }
+
+            const newMessage: ConversationMessage = {
+                id: uuidv4(),
+                text,
+                translation: result.translation,
+                sourceLang: result.detectedLang,
+                sourceLangName: result.sourceLangName,
+                targetLang: targetLanguage,
+                timestamp: Date.now(),
+                isEdited: false
+            };
+
+            setMessages(prev => [...prev, newMessage]);
         } catch (error) {
             console.error('Translation error:', error);
             showToast('翻译失败，请重试', 'error');
         }
     }, [
-        currentMode,
-        sourceLang,
         targetLang,
+        sourceLang,
         sourceCustomLang,
         targetCustomLang,
         showSourceCustomInput,
@@ -231,16 +145,14 @@ Important: Return ONLY the JSON object, no markdown formatting or other text.`;
         showToast
     ]);
 
-    // 处理文本输入提
-    const handleSubmit = useCallback((e: React.FormEvent) => {
-        e.preventDefault();
-        handleTranslate(inputText);
-    }, [inputText, handleTranslate]);
+    // 处理语音输入结果
+    const handleVoiceResult = useCallback((text: string) => {
+        handleTranslation(text, currentMode);
+    }, [handleTranslation, currentMode]);
 
     // 使用语音输入hook
     const {
         isRecording,
-        isProcessing,
         recordingDuration,
         handleVoiceInput,
         cleanup: cleanupRecording
@@ -265,7 +177,7 @@ Important: Return ONLY the JSON object, no markdown formatting or other text.`;
                     : m
             ));
         } catch (error) {
-            showToast('修改失败，请重试', 'error');
+            showToast('修改��败，请重试', 'error');
         }
     }, [messages, apiService, showToast]);
 
@@ -682,20 +594,6 @@ Important: Return ONLY the JSON object, no markdown formatting or other text.`;
                     </span>
                 </button>
             </div>
-
-            {/* 处理中提示 */}
-            {isProcessing && (
-                <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-                    <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-xl max-w-sm w-full mx-4">
-                        <div className="flex items-center justify-center gap-3">
-                            <div className="animate-spin rounded-full h-8 w-8 border-2 border-blue-500 border-t-transparent"></div>
-                            <span className="text-lg text-gray-700 dark:text-gray-200">
-                                正在处理...
-                            </span>
-                        </div>
-                    </div>
-                </div>
-            )}
         </div>
     );
 };
