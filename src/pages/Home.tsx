@@ -123,6 +123,14 @@ const Home = () => {
         );
     };
 
+    const handleTabClick = (tab: 'text' | 'image') => {
+        if (tab !== activeTab) {
+            setActiveTab(tab);
+            setSourceText('');
+            setTranslation('');
+        }
+    };
+
     return (
         <div className="max-w-2xl mx-auto space-y-6">
             <RecordingOverlay
@@ -141,7 +149,7 @@ const Home = () => {
             <div className="mb-4">
                 <div className="flex space-x-2 mb-4">
                     <button
-                        onClick={() => setActiveTab('text')}
+                        onClick={() => handleTabClick('text')}
                         className={`flex-1 py-2 px-4 rounded-md ${activeTab === 'text'
                             ? 'bg-blue-600 text-white'
                             : 'bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-200'
@@ -150,7 +158,7 @@ const Home = () => {
                         文本翻译
                     </button>
                     <button
-                        onClick={() => setActiveTab('image')}
+                        onClick={() => handleTabClick('image')}
                         className={`flex-1 py-2 px-4 rounded-md ${activeTab === 'image'
                             ? 'bg-blue-600 text-white'
                             : 'bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-200'
