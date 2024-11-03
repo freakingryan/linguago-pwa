@@ -8,6 +8,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { useDispatch } from 'react-redux';
 import { addRecord } from '../store/slices/historySlice';
 import { ImageProcessService } from '../services/imageProcessService';
+import { startLoading, stopLoading } from '../store/slices/loadingSlice';
 
 const COMMON_LANGUAGES = [
     { code: 'en', name: '英语' },
@@ -54,12 +55,6 @@ const IMAGE_CONFIG = {
     VALID_TYPES: ['image/jpeg', 'image/png', 'image/webp', 'image/gif'] as const,
 } as const;
 
-// 添加翻译状态类型
-type TranslationStatus = {
-    stage: 'idle' | 'preparing' | 'uploading' | 'translating' | 'done';
-    progress: number;
-};
-
 const ImageTranslator: React.FC = () => {
     const [selectedImage, setSelectedImage] = useState<File | null>(null);
     const [previewUrl, setPreviewUrl] = useState<string | null>(null);
@@ -73,10 +68,6 @@ const ImageTranslator: React.FC = () => {
     const [ocrResult, setOcrResult] = useState<string>('');
     const [detectedLanguage, setDetectedLanguage] = useState<string>('');
     const dispatch = useDispatch();
-    const [translationStatus, setTranslationStatus] = useState<TranslationStatus>({
-        stage: 'idle',
-        progress: 0
-    });
     const abortControllerRef = useRef<AbortController | null>(null);
     const imageProcessService = useMemo(() => new ImageProcessService(), []);
 
@@ -125,23 +116,19 @@ const ImageTranslator: React.FC = () => {
             return;
         }
 
-        setIsImageLoading(true);
-        setTranslationStatus({ stage: 'preparing', progress: 0 });
-
+        dispatch(startLoading('processing'));
         try {
-            // 使用 ImageProcessService 处理图片
             const { compressedFile, thumbnail } = await imageProcessService.processImage(file);
             setSelectedImage(compressedFile);
             setPreviewUrl(thumbnail);
             setTranslation('');
-            setTranslationStatus({ stage: 'idle', progress: 0 });
         } catch (error) {
             console.error('Image processing error:', error);
             showToast('图片处理失败', 'error');
         } finally {
-            setIsImageLoading(false);
+            dispatch(stopLoading());
         }
-    }, [imageProcessService, showToast]);
+    }, [imageProcessService, showToast, dispatch]);
 
     // 修改 handleImageChange
     const handleImageChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -155,8 +142,7 @@ const ImageTranslator: React.FC = () => {
         if (abortControllerRef.current) {
             abortControllerRef.current.abort();
             abortControllerRef.current = null;
-            setIsLoading(false);
-            setTranslationStatus({ stage: 'idle', progress: 0 });
+            dispatch(stopLoading());
             showToast('已取消翻译', 'info');
         }
     };
@@ -188,22 +174,15 @@ const ImageTranslator: React.FC = () => {
     const handleTranslate = async () => {
         if (!selectedImage || !apiKey) return;
 
-        setIsLoading(true);
-        setTranslationStatus({ stage: 'preparing', progress: 20 });
-        abortControllerRef.current = new AbortController();
-
+        dispatch(startLoading('translating'));
         try {
             const base64Data = await convertToBase64(selectedImage);
-            setTranslationStatus({ stage: 'uploading', progress: 40 });
-
             const apiService = new UnifiedApiService(apiUrl, apiKey, model);
-            setTranslationStatus({ stage: 'translating', progress: 60 });
 
             const targetLang = customLanguage ||
                 COMMON_LANGUAGES.find(lang => lang.code === targetLanguage)?.name ||
                 targetLanguage;
 
-            // 添加提示词
             const prompt = `Please analyze this image and translate any text content you find into ${targetLang}. 
             Follow these rules:
             1. First detect the language of the text in the image
@@ -222,9 +201,6 @@ const ImageTranslator: React.FC = () => {
                 selectedImage.type
             );
 
-            console.log('API Response:', response);
-
-            setTranslationStatus({ stage: 'done', progress: 100 });
             const result = parseTranslationResult(response);
             if (result) {
                 setOcrResult(result.originalText);
@@ -251,11 +227,8 @@ const ImageTranslator: React.FC = () => {
             console.error('Translation error:', error);
             showToast(error.message || '图片翻译失败，请重试', 'error');
         } finally {
-            setIsLoading(false);
+            dispatch(stopLoading());
             abortControllerRef.current = null;
-            setTimeout(() => {
-                setTranslationStatus({ stage: 'idle', progress: 0 });
-            }, 1000);
         }
     };
 
@@ -315,89 +288,6 @@ const ImageTranslator: React.FC = () => {
                 <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
                     支持 JPG、PNG、GIF、WebP 格式，最大 4MB
                 </p>
-            </div>
-        );
-    };
-
-    // 修改进度指示器渲染函数
-    const renderProgress = () => {
-        if (translationStatus.stage === 'idle') return null;
-
-        const stageText = {
-            preparing: '准备中...',
-            uploading: '上传图片...',
-            translating: '翻译中...',
-            done: '完成'
-        }[translationStatus.stage];
-
-        const radius = 40;
-        const circumference = 2 * Math.PI * radius;
-        const progress = translationStatus.progress;
-        const offset = circumference - (progress / 100) * circumference;
-
-        return (
-            <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-                <div className="bg-white dark:bg-gray-800 p-8 rounded-lg shadow-xl max-w-sm w-full mx-4">
-                    <div className="flex flex-col items-center space-y-4">
-                        {/* 圆形进度条 */}
-                        <div className="relative w-32 h-32">
-                            {/* 背景圆环 */}
-                            <svg className="w-full h-full -rotate-90 transform">
-                                <circle
-                                    className="text-gray-200 dark:text-gray-700"
-                                    strokeWidth="8"
-                                    stroke="currentColor"
-                                    fill="transparent"
-                                    r={radius}
-                                    cx="64"
-                                    cy="64"
-                                />
-                                {/* 进度圆环 */}
-                                <circle
-                                    className="text-blue-500 transition-all duration-300"
-                                    strokeWidth="8"
-                                    strokeDasharray={circumference}
-                                    strokeDashoffset={offset}
-                                    strokeLinecap="round"
-                                    stroke="currentColor"
-                                    fill="transparent"
-                                    r={radius}
-                                    cx="64"
-                                    cy="64"
-                                />
-                            </svg>
-                            {/* 中间的进度文字 */}
-                            <div className="absolute inset-0 flex items-center justify-center">
-                                <span className="text-2xl font-semibold text-gray-700 dark:text-gray-200">
-                                    {progress}%
-                                </span>
-                            </div>
-                        </div>
-
-                        {/* 状态文本 */}
-                        <div className="text-center space-y-2">
-                            <p className="text-lg font-medium text-gray-700 dark:text-gray-200">
-                                {stageText}
-                            </p>
-                            <p className="text-sm text-gray-500 dark:text-gray-400">
-                                请耐心等待...
-                            </p>
-                        </div>
-
-                        {/* 取消按钮 */}
-                        {isLoading && (
-                            <button
-                                onClick={handleCancelTranslation}
-                                className="mt-4 w-full py-2 px-4 bg-red-600 hover:bg-red-700 text-white rounded-md transition-colors duration-200 flex items-center justify-center space-x-2"
-                            >
-                                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
-                                </svg>
-                                <span>取消翻译</span>
-                            </button>
-                        )}
-                    </div>
-                </div>
             </div>
         );
     };
@@ -468,7 +358,7 @@ const ImageTranslator: React.FC = () => {
 
             <button
                 onClick={handleTranslate}
-                disabled={!selectedImage || isLoading || !apiKey || (!targetLanguage && !customLanguage)}
+                disabled={!selectedImage || !apiKey || (!targetLanguage && !customLanguage)}
                 className="w-full py-3 px-4 bg-blue-600 text-white rounded-md hover:bg-blue-700 disabled:bg-gray-400 disabled:cursor-not-allowed transition-colors"
             >
                 {isLoading ? '翻译中...' : '翻译图片'}
@@ -567,9 +457,6 @@ const ImageTranslator: React.FC = () => {
                     })()}
                 </div>
             )}
-
-            {/* 添加进度指示器 */}
-            {renderProgress()}
 
             {/* 添加快捷键提示 */}
             <div className="text-xs text-gray-500 dark:text-gray-400 space-y-1">

@@ -12,6 +12,7 @@ import RecordingOverlay from '../components/common/RecordingOverlay';
 import { useVoiceRecording } from '../hooks/useVoiceRecording';
 import ProcessingOverlay from '../components/common/ProcessingOverlay';
 import { useAITranslation } from '../hooks/useAITranslation';
+import { useDispatch } from 'react-redux';
 
 // 添加常用语言列表
 const COMMON_LANGUAGES = [
@@ -47,10 +48,12 @@ const Conversation: React.FC = () => {
         text: string;
         lang: string;
     } | null>(null);
+    const dispatch = useDispatch();
 
-    const { isTranslating, translateText, setIsTranslating } = useAITranslation({
+    const { translateText } = useAITranslation({
         apiService,
-        onError: (error) => showToast(error, 'error')
+        onError: (error) => showToast(error, 'error'),
+        dispatch
     });
 
     // 获取语言显示名称
@@ -144,7 +147,7 @@ const Conversation: React.FC = () => {
         apiService,
         onResult: handleVoiceResult,
         onError: (error) => showToast(error, 'error'),
-        setIsTranslating
+        dispatch
     });
 
     // 处理消息编辑
@@ -323,7 +326,7 @@ const Conversation: React.FC = () => {
                                 <button
                                     onClick={() => setShowTargetCustomInput(true)}
                                     className="p-2 text-blue-600 hover:text-blue-700"
-                                    title="自定义语言"
+                                    title="自定义��言"
                                 >
                                     <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
@@ -521,7 +524,7 @@ const Conversation: React.FC = () => {
             />
 
             {/* AI 处理提示 */}
-            <ProcessingOverlay isProcessing={isTranslating} />
+            <ProcessingOverlay isProcessing={false} />
 
             {/* 添加轻微弹跳动画 */}
             <style>{`

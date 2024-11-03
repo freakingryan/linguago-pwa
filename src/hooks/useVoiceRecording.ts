@@ -1,19 +1,21 @@
 import { useState, useRef, useCallback } from 'react';
 import { AudioRecorderService } from '../services/audioRecorder';
 import { UnifiedApiService } from '../services/api';
+import { Dispatch } from 'redux';
+import { startLoading, stopLoading } from '../store/slices/loadingSlice';
 
 interface UseVoiceRecordingProps {
     apiService: UnifiedApiService;
     onResult: (text: string) => void;
     onError: (error: string) => void;
-    setIsTranslating: (isTranslating: boolean) => void;
+    dispatch: Dispatch;
 }
 
 export const useVoiceRecording = ({
     apiService,
     onResult,
     onError,
-    setIsTranslating
+    dispatch
 }: UseVoiceRecordingProps) => {
     const [isRecording, setIsRecording] = useState(false);
     const [recordingDuration, setRecordingDuration] = useState(0);
@@ -25,13 +27,14 @@ export const useVoiceRecording = ({
             if (!isRecording) {
                 await audioRecorder.current.startRecording();
                 setIsRecording(true);
+                dispatch(startLoading('recording'));
                 setRecordingDuration(0);
                 recordingTimer.current = setInterval(() => {
                     setRecordingDuration(prev => prev + 1);
                 }, 1000);
             } else {
                 setIsRecording(false);
-                setIsTranslating(true);
+                dispatch(startLoading('processing'));
 
                 if (recordingTimer.current) {
                     clearInterval(recordingTimer.current);
@@ -45,9 +48,10 @@ export const useVoiceRecording = ({
         } catch (error) {
             console.error('Voice input error:', error);
             onError(error instanceof Error ? error.message : '录音处理失败');
-            setIsTranslating(false);
+        } finally {
+            dispatch(stopLoading());
         }
-    }, [isRecording, apiService, onResult, onError, setIsTranslating]);
+    }, [isRecording, apiService, onResult, onError, dispatch]);
 
     const cleanup = useCallback(() => {
         if (recordingTimer.current) {
@@ -56,8 +60,8 @@ export const useVoiceRecording = ({
         }
         setRecordingDuration(0);
         setIsRecording(false);
-        setIsTranslating(false);
-    }, [setIsTranslating]);
+        dispatch(stopLoading());
+    }, [dispatch]);
 
     return {
         isRecording,

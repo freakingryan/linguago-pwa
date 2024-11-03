@@ -1,14 +1,15 @@
-import { useState, useCallback } from 'react';
+import { useCallback } from 'react';
 import { UnifiedApiService } from '../services/api';
+import { Dispatch } from 'redux';
+import { startLoading, stopLoading } from '../store/slices/loadingSlice';
 
 interface UseAITranslationProps {
     apiService: UnifiedApiService;
     onError: (error: string) => void;
+    dispatch: Dispatch;
 }
 
-export const useAITranslation = ({ apiService, onError }: UseAITranslationProps) => {
-    const [isTranslating, setIsTranslating] = useState(false);
-
+export const useAITranslation = ({ apiService, onError, dispatch }: UseAITranslationProps) => {
     const translateText = useCallback(async (
         text: string,
         targetLang: string,
@@ -19,7 +20,7 @@ export const useAITranslation = ({ apiService, onError }: UseAITranslationProps)
     ) => {
         if (!text || !targetLang) return null;
 
-        setIsTranslating(true);
+        dispatch(startLoading('translating'));
         try {
             const prompt = options?.customPrompt || (options?.formatAsJson
                 ? `Please perform the following tasks:
@@ -39,11 +40,9 @@ ${text}`);
             const response = await apiService.generateText(prompt);
 
             if (options?.formatAsJson) {
-                // 清理响应内容，移除可能的 markdown 格式
                 const cleanResponse = response.replace(/```json\n?|\n?```/g, '').trim();
                 const result = JSON.parse(cleanResponse);
 
-                // 验证 JSON 格式的响应
                 if (!result.detectedLang || !result.sourceLangName || !result.translation) {
                     throw new Error('Invalid response format');
                 }
@@ -56,13 +55,11 @@ ${text}`);
             onError('翻译失败，请重试');
             return null;
         } finally {
-            setIsTranslating(false);
+            dispatch(stopLoading());
         }
-    }, [apiService, onError]);
+    }, [apiService, onError, dispatch]);
 
     return {
-        isTranslating,
-        translateText,
-        setIsTranslating
+        translateText
     };
 }; 

@@ -1,17 +1,17 @@
-import { useState, useMemo, useRef, useEffect } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { useSelector, useDispatch } from 'react-redux';
 import { RootState } from '../store';
 import { TextToSpeechService } from '../services/textToSpeech';
 import { addRecord } from '../store/slices/historySlice';
 import { v4 as uuidv4 } from 'uuid';
 import Toast from '../components/common/Toast';
-import { AudioRecorderService } from '../services/audioRecorder';
 import { UnifiedApiService } from '../services/api';
 import { useToast } from '../hooks/useToast';
 import RecordingOverlay from '../components/common/RecordingOverlay';
 import ImageTranslator from '../components/ImageTranslator';
 import { useAITranslation } from '../hooks/useAITranslation';
 import { useVoiceRecording } from '../hooks/useVoiceRecording';
+import { startLoading, stopLoading } from '../store/slices/loadingSlice';
 
 const COMMON_LANGUAGES = [
     { code: 'en', name: '英语' },
@@ -29,26 +29,20 @@ const Home = () => {
     const [targetLanguage, setTargetLanguage] = useState('en');
     const [customLanguage, setCustomLanguage] = useState('');
     const [translation, setTranslation] = useState('');
-    const [isLoading, setIsLoading] = useState(false);
-    const [isProcessing, setIsProcessing] = useState(false);
     const { apiKey, apiUrl, model } = useSelector((state: RootState) => state.settings);
+    const { isLoading } = useSelector((state: RootState) => state.loading);
     const apiService = useMemo(() => new UnifiedApiService(apiUrl, apiKey, model), [apiUrl, apiKey, model]);
-
     const textToSpeech = useMemo(() => new TextToSpeechService(), []);
-
     const dispatch = useDispatch();
-
-    // 使用 useToast hook
     const { toast, showToast, hideToast } = useToast();
-
     const [activeTab, setActiveTab] = useState<'text' | 'image'>('text');
 
-    const { isTranslating, translateText, setIsTranslating } = useAITranslation({
+    const { translateText } = useAITranslation({
         apiService,
-        onError: (error) => showToast(error, 'error')
+        onError: (error) => showToast(error, 'error'),
+        dispatch
     });
 
-    // 使用 useVoiceRecording 替代 useVoiceInput
     const {
         isRecording,
         recordingDuration,
@@ -61,10 +55,9 @@ const Home = () => {
             handleSubmit(new Event('submit') as any);
         },
         onError: (error) => showToast(error, 'error'),
-        setIsTranslating
+        dispatch
     });
 
-    // 组件卸载时清理
     useEffect(() => {
         return () => {
             cleanupRecording();
@@ -75,22 +68,29 @@ const Home = () => {
         e.preventDefault();
         if (!sourceText.trim() || !apiKey) return;
 
-        const targetLang = customLanguage ||
-            COMMON_LANGUAGES.find(lang => lang.code === targetLanguage)?.name ||
-            targetLanguage;
+        try {
+            dispatch(startLoading('translating'));
+            const targetLang = customLanguage ||
+                COMMON_LANGUAGES.find(lang => lang.code === targetLanguage)?.name ||
+                targetLanguage;
 
-        const translatedText = await translateText(sourceText, targetLang);
-        if (translatedText) {
-            setTranslation(translatedText);
-            dispatch(addRecord({
-                id: uuidv4(),
-                type: 'text',
-                sourceText,
-                translatedText,
-                sourceLang: 'auto',
-                targetLang: targetLanguage || customLanguage,
-                timestamp: Date.now(),
-            }));
+            const translatedText = await translateText(sourceText, targetLang);
+            if (translatedText) {
+                setTranslation(translatedText);
+                dispatch(addRecord({
+                    id: uuidv4(),
+                    type: 'text',
+                    sourceText,
+                    translatedText,
+                    sourceLang: 'auto',
+                    targetLang: targetLanguage || customLanguage,
+                    timestamp: Date.now(),
+                }));
+            }
+        } catch (error) {
+            showToast('翻译失败，请重试', 'error');
+        } finally {
+            dispatch(stopLoading());
         }
     };
 
@@ -98,9 +98,8 @@ const Home = () => {
         textToSpeech.speak(text, language);
     };
 
-    // 修改录音按钮的图标
     const renderMicrophoneIcon = () => {
-        if (isProcessing) {
+        if (isLoading) {
             return (
                 <svg className="w-6 h-6 text-blue-500 animate-spin" fill="none" viewBox="0 0 24 24">
                     <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
@@ -131,7 +130,6 @@ const Home = () => {
                 duration={recordingDuration}
                 onStop={handleVoiceInput}
             />
-            {/* 添加 Toast 组件 */}
             {toast.show && (
                 <Toast
                     message={toast.message}
@@ -177,11 +175,10 @@ const Home = () => {
                                     rows={4}
                                     required
                                 />
-                                {/* 语音输入按钮移到右下角 */}
                                 <button
                                     type="button"
                                     onClick={handleVoiceInput}
-                                    disabled={isProcessing}
+                                    disabled={isLoading}
                                     className="absolute right-2 bottom-2 p-2 rounded-full hover:bg-gray-100 dark:hover:bg-gray-600 transition-colors"
                                     title={isRecording ? '点击停止录音' : '点击开始录音'}
                                 >
@@ -239,14 +236,12 @@ const Home = () => {
                 )}
             </div>
 
-            {/* API 配置提示 */}
             {!apiKey && (
                 <div className="p-4 bg-yellow-100 dark:bg-yellow-800 rounded-md text-yellow-800 dark:text-yellow-100">
                     请先在设置页面配置 API Key
                 </div>
             )}
 
-            {/* 翻译结果 */}
             {translation && (
                 <div className="p-4 bg-white dark:bg-gray-800 rounded-lg shadow">
                     <div className="flex justify-between items-start mb-2">
