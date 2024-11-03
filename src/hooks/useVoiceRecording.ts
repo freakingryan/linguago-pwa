@@ -3,6 +3,7 @@ import { AudioRecorderService } from '../services/audioRecorder';
 import { UnifiedApiService } from '../services/api';
 import { Dispatch } from 'redux';
 import { startLoading, stopLoading } from '../store/slices/loadingSlice';
+import { PromptService } from '../services/promptService';
 
 interface UseVoiceRecordingProps {
     apiService: UnifiedApiService;
@@ -42,7 +43,8 @@ export const useVoiceRecording = ({
                 }
 
                 const audioBlob = await audioRecorder.current.stopRecording();
-                const text = await apiService.processAudio(audioBlob);
+                const prompt = PromptService.getAudioTranscriptionPrompt();
+                const text = await apiService.processAudio(audioBlob, prompt);
                 onResult(text);
             }
         } catch (error) {

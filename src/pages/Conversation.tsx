@@ -27,6 +27,13 @@ const COMMON_LANGUAGES = [
     // ... 可以添加更多语言
 ];
 
+// 添加返回结果的类型定义
+interface TranslationResult {
+    detectedLang: string;
+    sourceLangName: string;
+    translation: string;
+}
+
 const Conversation: React.FC = () => {
     const { apiKey, apiUrl, model } = useSelector((state: RootState) => state.settings);
     const [messages, setMessages] = useState<ConversationMessage[]>([]);
@@ -107,7 +114,9 @@ const Conversation: React.FC = () => {
             ? (showTargetCustomInput ? targetCustomLang : targetLang)
             : (showSourceCustomInput ? sourceCustomLang : sourceLang);
 
-        const result = await translateText(text, targetLanguage, { formatAsJson: true });
+        // 添加类型断言
+        const result = await translateText(text, targetLanguage, { formatAsJson: true }) as TranslationResult | null;
+
         if (result) {
             const newMessage: ConversationMessage = {
                 id: uuidv4(),
@@ -326,7 +335,7 @@ const Conversation: React.FC = () => {
                                 <button
                                     onClick={() => setShowTargetCustomInput(true)}
                                     className="p-2 text-blue-600 hover:text-blue-700"
-                                    title="自定义��言"
+                                    title="自定义语言"
                                 >
                                     <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
