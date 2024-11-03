@@ -21,8 +21,8 @@ export const useAITranslation = ({ apiService, onError, dispatch }: UseAITransla
     ) => {
         if (!text || !targetLang) return null;
 
-        dispatch(startLoading('translating'));
         try {
+            dispatch(startLoading('translating'));
             const prompt = options?.customPrompt ||
                 PromptService.getTranslationPrompt(text, targetLang, options?.formatAsJson);
 

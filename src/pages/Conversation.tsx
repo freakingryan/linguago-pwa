@@ -114,22 +114,42 @@ const Conversation: React.FC = () => {
             ? (showTargetCustomInput ? targetCustomLang : targetLang)
             : (showSourceCustomInput ? sourceCustomLang : sourceLang);
 
-        // 添加类型断言
-        const result = await translateText(text, targetLanguage, { formatAsJson: true }) as TranslationResult | null;
-
-        if (result) {
-            const newMessage: ConversationMessage = {
-                id: uuidv4(),
+        try {
+            // 添加新消息到列表中，但先不显示翻译结果
+            const messageId = uuidv4();
+            const pendingMessage: ConversationMessage = {
+                id: messageId,
                 text,
-                translation: result.translation,
-                sourceLang: result.detectedLang,
-                sourceLangName: result.sourceLangName,
+                translation: '翻译中...', // 临时占位
+                sourceLang: 'detecting',
+                sourceLangName: '检测中',
                 targetLang: targetLanguage,
                 timestamp: Date.now(),
                 isEdited: false
             };
 
-            setMessages(prev => [...prev, newMessage]);
+            // 立即添加消息到列表
+            setMessages(prev => [...prev, pendingMessage]);
+
+            // 获取翻译结果
+            const result = await translateText(text, targetLanguage, { formatAsJson: true }) as TranslationResult | null;
+
+            if (result) {
+                // 更新已存在的消息
+                setMessages(prev => prev.map(msg =>
+                    msg.id === messageId
+                        ? {
+                            ...msg,
+                            translation: result.translation,
+                            sourceLang: result.detectedLang,
+                            sourceLangName: result.sourceLangName,
+                        }
+                        : msg
+                ));
+            }
+        } catch (error) {
+            // 如果出错，移除临时消息
+            setMessages(prev => prev.filter(msg => msg.text !== text));
         }
     }, [
         targetLang,
