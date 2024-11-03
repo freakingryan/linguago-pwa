@@ -10,6 +10,8 @@ import { useVoicePlayer } from '../hooks/useVoicePlayer';
 import { LocationService } from '../services/locationService';
 import RecordingOverlay from '../components/common/RecordingOverlay';
 import { useVoiceRecording } from '../hooks/useVoiceRecording';
+import ProcessingOverlay from '../components/common/ProcessingOverlay';
+import { useAITranslation } from '../hooks/useAITranslation';
 
 // 添加常用语言列表
 const COMMON_LANGUAGES = [
@@ -45,6 +47,11 @@ const Conversation: React.FC = () => {
         text: string;
         lang: string;
     } | null>(null);
+
+    const { isTranslating, translateText, setIsTranslating } = useAITranslation({
+        apiService,
+        onError: (error) => showToast(error, 'error')
+    });
 
     // 获取语言显示名称
     const getLanguageDisplay = useCallback((langCode: string, customLang: string, isSource: boolean) => {
@@ -93,31 +100,12 @@ const Conversation: React.FC = () => {
     const handleTranslation = useCallback(async (text: string, mode: 'source' | 'target' = 'source') => {
         if (!text) return;
 
-        try {
-            // 根据当前模式决定目标语言
-            const targetLanguage = mode === 'source'
-                ? (showTargetCustomInput ? targetCustomLang : targetLang)
-                : (showSourceCustomInput ? sourceCustomLang : sourceLang);
+        const targetLanguage = mode === 'source'
+            ? (showTargetCustomInput ? targetCustomLang : targetLang)
+            : (showSourceCustomInput ? sourceCustomLang : sourceLang);
 
-            const prompt = `Please perform the following tasks:
-1. Detect the language of this text: "${text}"
-2. Translate it to ${targetLanguage}
-3. Format the response as JSON:
-{
-    "detectedLang": "detected language code",
-    "sourceLangName": "language name in Chinese",
-    "translation": "translated text"
-}
-Important: Return ONLY the JSON object, no markdown formatting or other text.`;
-
-            const response = await apiService.generateText(prompt);
-            const jsonStr = response.replace(/```json\n?|\n?```/g, '').trim();
-            const result = JSON.parse(jsonStr);
-
-            if (!result.detectedLang || !result.sourceLangName || !result.translation) {
-                throw new Error('Invalid response format');
-            }
-
+        const result = await translateText(text, targetLanguage, { formatAsJson: true });
+        if (result) {
             const newMessage: ConversationMessage = {
                 id: uuidv4(),
                 text,
@@ -130,9 +118,6 @@ Important: Return ONLY the JSON object, no markdown formatting or other text.`;
             };
 
             setMessages(prev => [...prev, newMessage]);
-        } catch (error) {
-            console.error('Translation error:', error);
-            showToast('翻译失败，请重试', 'error');
         }
     }, [
         targetLang,
@@ -141,11 +126,10 @@ Important: Return ONLY the JSON object, no markdown formatting or other text.`;
         targetCustomLang,
         showSourceCustomInput,
         showTargetCustomInput,
-        apiService,
-        showToast
+        translateText
     ]);
 
-    // 处理语音输入结果
+    // 修改 handleVoiceResult 函数
     const handleVoiceResult = useCallback((text: string) => {
         handleTranslation(text, currentMode);
     }, [handleTranslation, currentMode]);
@@ -159,7 +143,8 @@ Important: Return ONLY the JSON object, no markdown formatting or other text.`;
     } = useVoiceRecording({
         apiService,
         onResult: handleVoiceResult,
-        onError: (error) => showToast(error, 'error')
+        onError: (error) => showToast(error, 'error'),
+        setIsTranslating
     });
 
     // 处理消息编辑
@@ -177,7 +162,7 @@ Important: Return ONLY the JSON object, no markdown formatting or other text.`;
                     : m
             ));
         } catch (error) {
-            showToast('修改��败，请重试', 'error');
+            showToast('修改失败，请重试', 'error');
         }
     }, [messages, apiService, showToast]);
 
@@ -197,10 +182,10 @@ Important: Return ONLY the JSON object, no markdown formatting or other text.`;
 
     // 修改语音输入按钮的点击处理
     const handleVoiceButtonClick = useCallback(() => {
-        handleVoiceInput();
         if (enlargedText) {
             setEnlargedText(null);
         }
+        handleVoiceInput();
     }, [handleVoiceInput, enlargedText]);
 
     // 组件卸载时清理
@@ -528,12 +513,15 @@ Important: Return ONLY the JSON object, no markdown formatting or other text.`;
                 </div>
             )}
 
-            {/* 录音提示浮层 */}
+            {/* 录音提示 */}
             <RecordingOverlay
                 isRecording={isRecording}
                 duration={recordingDuration}
                 onStop={handleVoiceInput}
             />
+
+            {/* AI 处理提示 */}
+            <ProcessingOverlay isProcessing={isTranslating} />
 
             {/* 添加轻微弹跳动画 */}
             <style>{`

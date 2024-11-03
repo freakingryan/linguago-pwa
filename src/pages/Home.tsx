@@ -10,6 +10,7 @@ import { UnifiedApiService } from '../services/api';
 import { useToast } from '../hooks/useToast';
 import RecordingOverlay from '../components/common/RecordingOverlay';
 import ImageTranslator from '../components/ImageTranslator';
+import { useAITranslation } from '../hooks/useAITranslation';
 
 const COMMON_LANGUAGES = [
     { code: 'en', name: '英语' },
@@ -47,6 +48,11 @@ const Home = () => {
 
     const [activeTab, setActiveTab] = useState<'text' | 'image'>('text');
 
+    const { isTranslating, translateText } = useAITranslation({
+        apiService,
+        onError: (error) => showToast(error, 'error')
+    });
+
     const handleSubmit = async (e: React.FormEvent) => {
         e.preventDefault();
         if (!sourceText.trim() || !apiKey) return;
@@ -55,16 +61,9 @@ const Home = () => {
             COMMON_LANGUAGES.find(lang => lang.code === targetLanguage)?.name ||
             targetLanguage;
 
-        setIsLoading(true);
-
-        try {
-            const prompt = `Please translate the following text to ${targetLang}. Only provide the translation without any additional explanation or text:
-
-${sourceText}`;
-
-            const translatedText = await apiService.generateText(prompt);
+        const translatedText = await translateText(sourceText, targetLang);
+        if (translatedText) {
             setTranslation(translatedText);
-
             dispatch(addRecord({
                 id: uuidv4(),
                 type: 'text',
@@ -74,11 +73,6 @@ ${sourceText}`;
                 targetLang: targetLanguage || customLanguage,
                 timestamp: Date.now(),
             }));
-        } catch (error: any) {
-            console.error('Translation error:', error);
-            showToast(error.message || '翻译失败，请重试', 'error');
-        } finally {
-            setIsLoading(false);
         }
     };
 
