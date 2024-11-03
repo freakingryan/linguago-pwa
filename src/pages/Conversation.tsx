@@ -1,9 +1,9 @@
 import React, { useState, useCallback, useMemo, useEffect } from 'react';
-import { useSelector } from 'react-redux';
+import { useSelector, useDispatch } from 'react-redux';
 import { RootState } from '../store';
 import { UnifiedApiService } from '../services/api';
 import { v4 as uuidv4 } from 'uuid';
-import { ConversationMessage } from '../types/conversation';
+import { ConversationMessage, ConversationRecord } from '../types/conversation';
 import Toast from '../components/common/Toast';
 import { useToast } from '../hooks/useToast';
 import { useVoicePlayer } from '../hooks/useVoicePlayer';
@@ -12,9 +12,8 @@ import RecordingOverlay from '../components/common/RecordingOverlay';
 import { useVoiceRecording } from '../hooks/useVoiceRecording';
 import ProcessingOverlay from '../components/common/ProcessingOverlay';
 import { useAITranslation } from '../hooks/useAITranslation';
-import { useDispatch } from 'react-redux';
-import { IndexedDBService } from '../services/indexedDB';
-import { saveCurrentConversation } from '../store/slices/conversationHistorySlice';
+import { addConversationRecord, setConversationRecords } from '../store/slices/conversationHistorySlice';
+import { useIndexedDB } from '../hooks/useIndexedDB';
 
 // 添加常用语言列表
 const COMMON_LANGUAGES = [
@@ -58,7 +57,13 @@ const Conversation: React.FC = () => {
         lang: string;
     } | null>(null);
     const dispatch = useDispatch();
-    const indexedDBService = useMemo(() => new IndexedDBService(), []);
+    const {
+        isLoading: isDBLoading,  // 重命名以避免冲突
+        getCurrentConversation,
+        saveCurrentConversation,
+        getAllConversations,
+        addConversation
+    } = useIndexedDB();
 
     const { translateText } = useAITranslation({
         apiService,
@@ -110,33 +115,33 @@ const Conversation: React.FC = () => {
         }
     }, [locationService, showToast]);
 
-    // 组件加载时加载保存的对话
+    // 加载保存的对话
     useEffect(() => {
-        indexedDBService.getCurrentConversation()
-            .then(savedMessages => {
-                if (savedMessages && savedMessages.length > 0) {
-                    console.log('Loaded saved messages:', savedMessages);
-                    setMessages(savedMessages);
-                } else {
-                    console.log('No saved messages found');
-                }
-            })
-            .catch(error => {
-                console.error('Failed to load conversation:', error);
-                // 不显示错误提示，因为这是正常情况
-            });
-    }, []);
+        if (!isDBLoading) {
+            getCurrentConversation()
+                .then((savedMessages: ConversationMessage[]) => {  // 添加类型注解
+                    if (savedMessages && savedMessages.length > 0) {
+                        console.log('Loaded saved messages:', savedMessages);
+                        setMessages(savedMessages);
+                    }
+                })
+                .catch(error => {
+                    console.error('Failed to load conversation:', error);
+                    showToast('加载对话失败', 'error');
+                });
+        }
+    }, [isDBLoading, getCurrentConversation, showToast]);
 
-    // 当消息更新时保存到 IndexedDB
+    // 当消息更新时保存
     useEffect(() => {
-        if (messages.length > 0) {
-            indexedDBService.saveCurrentConversation(messages)
+        if (!isDBLoading && messages.length > 0) {
+            saveCurrentConversation(messages)
                 .catch(error => {
                     console.error('Failed to save conversation:', error);
                     showToast('保存对话失败', 'error');
                 });
         }
-    }, [messages]);
+    }, [messages, isDBLoading, saveCurrentConversation, showToast]);
 
     // 修改 handleTranslation 函数
     const handleTranslation = useCallback(async (text: string, mode: 'source' | 'target' = 'source') => {
@@ -244,27 +249,31 @@ const Conversation: React.FC = () => {
     }, [cleanupRecording]);
 
     // 处理重置对话
-    const handleResetConversation = useCallback(() => {
+    const handleResetConversation = useCallback(async () => {
         if (messages.length > 0) {
-            // 保存当前对话到历史记录
-            dispatch(saveCurrentConversation({
+            const newRecord: ConversationRecord = {
                 id: uuidv4(),
                 messages: [...messages],
                 timestamp: Date.now(),
                 startTime: messages[0].timestamp,
                 endTime: messages[messages.length - 1].timestamp
-            }));
+            };
 
-            // 清空当前对话
-            setMessages([]);
-
-            // 清空 IndexedDB 中的当前对话
-            indexedDBService.saveCurrentConversation([])
-                .catch(error => {
-                    console.error('Failed to clear current conversation:', error);
-                });
+            try {
+                // 先添加新的对话记录
+                await addConversation(newRecord);
+                // 清空当前对话
+                setMessages([]);
+                // 清空 IndexedDB 中的当前对话
+                await saveCurrentConversation([]);
+                // 更新 Redux store
+                dispatch(addConversationRecord(newRecord));
+            } catch (error) {
+                console.error('Failed to reset conversation:', error);
+                showToast('保存对话失败', 'error');
+            }
         }
-    }, [dispatch, messages]);
+    }, [messages, addConversation, saveCurrentConversation, dispatch, showToast]);
 
     return (
         <div className="max-w-2xl mx-auto p-4 space-y-4">
