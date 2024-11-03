@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useMemo } from 'react';
+import React, { useState, useCallback, useMemo, useEffect } from 'react';
 import { useSelector } from 'react-redux';
 import { RootState } from '../store';
 import { UnifiedApiService } from '../services/api';
@@ -6,40 +6,76 @@ import { v4 as uuidv4 } from 'uuid';
 import { ConversationMessage } from '../types/conversation';
 import Toast from '../components/common/Toast';
 import { useToast } from '../hooks/useToast';
-import { useVoiceInput } from '../hooks/useVoiceInput';
+// import { useVoiceInput } from '../hooks/useVoiceInput';
 import { useVoicePlayer } from '../hooks/useVoicePlayer';
 import { LocationService } from '../services/locationService';
+import RecordingOverlay from '../components/common/RecordingOverlay';
+import { useVoiceRecording } from '../hooks/useVoiceRecording';
 
 // 添加常用语言列表
 const COMMON_LANGUAGES = [
-    { code: 'en', name: '英语' },
-    { code: 'zh', name: '中文' },
-    { code: 'ja', name: '日语' },
-    { code: 'ko', name: '韩语' },
-    { code: 'fr', name: '法语' },
-    { code: 'de', name: '德语' },
-    { code: 'es', name: '西班牙语' },
-    { code: 'ru', name: '俄语' },
-    { code: 'it', name: '意大利语' },
-    { code: 'pt', name: '葡萄牙语' },
-    { code: 'vi', name: '越南语' },
-    { code: 'th', name: '泰语' },
-    { code: 'ar', name: '阿拉伯语' },
-    { code: 'hi', name: '印地语' },
+    { code: 'zh', name: '中文', nativeName: '中文' },
+    { code: 'en', name: '英语', nativeName: 'English' },
+    { code: 'ja', name: '日语', nativeName: '日本語' },
+    { code: 'ko', name: '韩语', nativeName: '한국어' },
+    { code: 'fr', name: '法语', nativeName: 'Français' },
+    { code: 'de', name: '德语', nativeName: 'Deutsch' },
+    { code: 'es', name: '西班牙语', nativeName: 'Español' },
+    { code: 'ru', name: '俄语', nativeName: 'Русский' },
+    // ... 可以添加更多语言
 ];
 
 const Conversation: React.FC = () => {
     const { apiKey, apiUrl, model } = useSelector((state: RootState) => state.settings);
     const [messages, setMessages] = useState<ConversationMessage[]>([]);
     const [inputText, setInputText] = useState('');
-    const [targetLang, setTargetLang] = useState('en');
-    const [customLang, setCustomLang] = useState('');
     const { toast, showToast, hideToast } = useToast();
     const apiService = useMemo(() => new UnifiedApiService(apiUrl, apiKey, model), [apiUrl, apiKey, model]);
     const { playVoice } = useVoicePlayer();
     const [isDetectingLocation, setIsDetectingLocation] = useState(false);
-    const [showLanguageInput, setShowLanguageInput] = useState(false);
     const locationService = useMemo(() => new LocationService(), []);
+    const [showTextInput, setShowTextInput] = useState(false);
+    // const [isProcessing, setIsProcessing] = useState(false);
+    const [processingStage, setProcessingStage] = useState<'recognizing' | 'translating'>('recognizing');
+    const [editingMessage, setEditingMessage] = useState<ConversationMessage | null>(null);
+    const [editingText, setEditingText] = useState('');
+    const [sourceLang, setSourceLang] = useState('zh');
+    const [sourceCustomLang, setSourceCustomLang] = useState('');
+    const [showSourceCustomInput, setShowSourceCustomInput] = useState(false);
+    const [targetLang, setTargetLang] = useState('en');
+    const [targetCustomLang, setTargetCustomLang] = useState('');
+    const [showTargetCustomInput, setShowTargetCustomInput] = useState(false);
+    const [currentMode, setCurrentMode] = useState<'source' | 'target'>('source');
+    const [enlargedText, setEnlargedText] = useState<{
+        text: string;
+        lang: string;
+    } | null>(null);
+    // const [isRecording, setIsRecording] = useState(false);
+    // const [recordingDuration, setRecordingDuration] = useState(0);
+
+    // 获取语言显示名称
+    const getLanguageDisplay = useCallback((langCode: string, customLang: string, isSource: boolean) => {
+        if (customLang) return customLang;
+        const lang = COMMON_LANGUAGES.find(l => l.code === langCode);
+        if (!lang) return langCode;
+        // 源语言显示中文名，目标语言显示本地语言名
+        return isSource ? lang.name : lang.nativeName;
+    }, []);
+
+    // 切换语言方向
+    const handleSwapLanguages = useCallback(() => {
+        const tempLang = sourceLang;
+        const tempCustomLang = sourceCustomLang;
+        const tempShowCustom = showSourceCustomInput;
+
+        setSourceLang(targetLang);
+        setSourceCustomLang(targetCustomLang);
+        setShowSourceCustomInput(showTargetCustomInput);
+
+        setTargetLang(tempLang);
+        setTargetCustomLang(tempCustomLang);
+        setShowTargetCustomInput(tempShowCustom);
+    }, [sourceLang, targetLang, sourceCustomLang, targetCustomLang, showSourceCustomInput, showTargetCustomInput]);
 
     // 添加地理位置检测函数
     const detectLocation = useCallback(async () => {
@@ -48,7 +84,8 @@ const Conversation: React.FC = () => {
             const detectedLanguage = await locationService.detectLanguage();
             if (detectedLanguage) {
                 setTargetLang(detectedLanguage.code);
-                setCustomLang('');
+                setTargetCustomLang('');
+                setShowTargetCustomInput(false);
                 showToast(`已设置为${detectedLanguage.name}`, 'success');
             } else {
                 showToast('无法检测当前位置语言，请手动选择', 'error');
@@ -65,9 +102,10 @@ const Conversation: React.FC = () => {
         if (!text) return;
 
         try {
+            const targetLanguage = showTargetCustomInput ? targetCustomLang : targetLang;
             const prompt = `Please perform the following tasks:
 1. Detect the language of this text: "${text}"
-2. Translate it to ${customLang || targetLang}
+2. Translate it to ${targetLanguage}
 3. Format the response as JSON:
 {
     "detectedLang": "detected language code",
@@ -97,7 +135,7 @@ Important: Return ONLY the JSON object, no markdown formatting or other text.`;
                     translation: result.translation,
                     sourceLang: result.detectedLang,
                     sourceLangName: result.sourceLangName,
-                    targetLang: customLang || targetLang,
+                    targetLang: targetLanguage,
                     timestamp: Date.now(),
                     isEdited: false
                 };
@@ -118,21 +156,95 @@ Important: Return ONLY the JSON object, no markdown formatting or other text.`;
                 showToast('翻译失败，请重试', 'error');
             }
         }
-    }, [targetLang, customLang, apiService, showToast]);
+    }, [targetLang, targetCustomLang, showTargetCustomInput, apiService, showToast]);
 
     // 处理语音输入结果
-    const handleVoiceResult = useCallback((text: string) => {
-        handleTranslate(text);
-    }, [handleTranslate]);
+    const handleVoiceResult = useCallback(async (text: string) => {
+        if (!text) return;
 
-    // 处理文本输入提��
+        try {
+            // 根据当前模式决定源语言和目标语言
+            const sourceLanguage = currentMode === 'source'
+                ? (showSourceCustomInput ? sourceCustomLang : sourceLang)
+                : (showTargetCustomInput ? targetCustomLang : targetLang);
+
+            const targetLanguage = currentMode === 'source'
+                ? (showTargetCustomInput ? targetCustomLang : targetLang)
+                : (showSourceCustomInput ? sourceCustomLang : sourceLang);
+
+            const prompt = `Please perform the following tasks:
+1. Detect the language of this text: "${text}"
+2. Translate it to ${targetLanguage}
+3. Format the response as JSON:
+{
+    "detectedLang": "detected language code",
+    "sourceLangName": "language name in Chinese",
+    "translation": "translated text"
+}
+Important: Return ONLY the JSON object, no markdown formatting or other text.`;
+
+            const response = await apiService.generateText(prompt);
+            console.log('Raw response:', response);
+
+            // 清理响应内容，移除可能的 markdown 格式
+            const jsonStr = response.replace(/```json\n?|\n?```/g, '').trim();
+            console.log('Cleaned JSON string:', jsonStr);
+
+            try {
+                const result = JSON.parse(jsonStr);
+                console.log('Parsed result:', result);
+
+                if (!result.detectedLang || !result.sourceLangName || !result.translation) {
+                    throw new Error('Invalid response format');
+                }
+
+                const newMessage: ConversationMessage = {
+                    id: uuidv4(),
+                    text,
+                    translation: result.translation,
+                    sourceLang: result.detectedLang,
+                    sourceLangName: result.sourceLangName,
+                    targetLang: targetLanguage,
+                    timestamp: Date.now(),
+                    isEdited: false
+                };
+
+                setMessages(prev => [...prev, newMessage]);
+            } catch (parseError) {
+                console.error('Failed to parse response:', parseError);
+                console.log('Response that failed to parse:', jsonStr);
+                showToast('翻译结果格式错误，请重试', 'error');
+            }
+        } catch (error) {
+            console.error('Translation error:', error);
+            showToast('翻译失败，请重试', 'error');
+        }
+    }, [
+        currentMode,
+        sourceLang,
+        targetLang,
+        sourceCustomLang,
+        targetCustomLang,
+        showSourceCustomInput,
+        showTargetCustomInput,
+        apiService,
+        showToast
+    ]);
+
+    // 处理文本输入提
     const handleSubmit = useCallback((e: React.FormEvent) => {
         e.preventDefault();
         handleTranslate(inputText);
     }, [inputText, handleTranslate]);
 
     // 使用语音输入hook
-    const { isRecording, startRecording, stopRecording } = useVoiceInput({
+    const {
+        isRecording,
+        isProcessing,
+        recordingDuration,
+        handleVoiceInput,
+        cleanup: cleanupRecording
+    } = useVoiceRecording({
         apiService,
         onResult: handleVoiceResult,
         onError: (error) => showToast(error, 'error')
@@ -157,6 +269,35 @@ Important: Return ONLY the JSON object, no markdown formatting or other text.`;
         }
     }, [messages, apiService, showToast]);
 
+    // 处理文本更新和重新翻译
+    const handleUpdateText = useCallback(async (messageId: string) => {
+        if (!editingText.trim()) return;
+
+        try {
+            await handleEdit(messageId, editingText);
+            setEditingMessage(null);
+            setEditingText('');
+            showToast('翻译已更新', 'success');
+        } catch (error) {
+            showToast('更新失败，请重试', 'error');
+        }
+    }, [editingText, handleEdit, showToast]);
+
+    // 修改语音输入按钮的点击处理
+    const handleVoiceButtonClick = useCallback(() => {
+        handleVoiceInput();
+        if (enlargedText) {
+            setEnlargedText(null);
+        }
+    }, [handleVoiceInput, enlargedText]);
+
+    // 组件卸载时清理
+    useEffect(() => {
+        return () => {
+            cleanupRecording();
+        };
+    }, [cleanupRecording]);
+
     return (
         <div className="max-w-2xl mx-auto p-4 space-y-4">
             {toast.show && (
@@ -167,41 +308,27 @@ Important: Return ONLY the JSON object, no markdown formatting or other text.`;
                 />
             )}
 
-            {/* 语言选择区域 - 优化后的界面 */}
-            <div className="bg-white dark:bg-gray-800 p-4 rounded-lg shadow">
-                <div className="flex items-center gap-4">
-                    <button
-                        onClick={detectLocation}
-                        disabled={isDetectingLocation}
-                        className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-400 transition-colors"
-                    >
-                        {isDetectingLocation ? (
-                            <div className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent" />
-                        ) : (
-                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
-                            </svg>
-                        )}
-                        自动检测语言
-                    </button>
-
-                    <div className="flex-1 relative">
-                        {showLanguageInput ? (
-                            <div className="flex items-center gap-2">
+            {/* 语言选择区域 */}
+            <div className="bg-white dark:bg-gray-800 p-4 rounded-lg shadow-lg">
+                <div className="flex items-center justify-between gap-4">
+                    {/* 源语言 */}
+                    <div className="flex-1">
+                        {showSourceCustomInput ? (
+                            <div className="flex gap-2">
                                 <input
                                     type="text"
-                                    value={customLang}
-                                    onChange={(e) => {
-                                        setCustomLang(e.target.value);
-                                        setTargetLang('');
-                                    }}
-                                    placeholder="输入目标语言..."
+                                    value={sourceCustomLang}
+                                    onChange={(e) => setSourceCustomLang(e.target.value)}
+                                    placeholder="输入源语言..."
                                     className="flex-1 px-3 py-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600 dark:text-white"
                                 />
                                 <button
-                                    onClick={() => setShowLanguageInput(false)}
-                                    className="p-2 text-gray-500 hover:text-gray-700 dark:text-gray-400"
+                                    onClick={() => {
+                                        setShowSourceCustomInput(false);
+                                        setSourceLang('zh');
+                                        setSourceCustomLang('');
+                                    }}
+                                    className="p-2 text-gray-500 hover:text-gray-700"
                                 >
                                     <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
@@ -209,25 +336,101 @@ Important: Return ONLY the JSON object, no markdown formatting or other text.`;
                                 </button>
                             </div>
                         ) : (
-                            <div className="flex items-center gap-2">
+                            <div className="flex gap-2">
                                 <select
-                                    value={targetLang}
-                                    onChange={(e) => {
-                                        setTargetLang(e.target.value);
-                                        setCustomLang('');
-                                    }}
+                                    value={sourceLang}
+                                    onChange={(e) => setSourceLang(e.target.value)}
                                     className="flex-1 px-3 py-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600 dark:text-white"
                                 >
-                                    <option value="">选择语言</option>
                                     {COMMON_LANGUAGES.map(lang => (
-                                        <option key={lang.code} value={lang.code}>{lang.name}</option>
+                                        <option key={lang.code} value={lang.code}>
+                                            {`${lang.name}（${lang.nativeName}）`}
+                                        </option>
                                     ))}
                                 </select>
                                 <button
-                                    onClick={() => setShowLanguageInput(true)}
-                                    className="text-sm text-blue-600 hover:text-blue-700 dark:text-blue-400"
+                                    onClick={() => setShowSourceCustomInput(true)}
+                                    className="p-2 text-blue-600 hover:text-blue-700"
+                                    title="自定义语言"
                                 >
-                                    输入其他语言
+                                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                                    </svg>
+                                </button>
+                            </div>
+                        )}
+                    </div>
+
+                    {/* 切换按钮 */}
+                    <button
+                        onClick={handleSwapLanguages}
+                        className="p-2 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-full transition-colors"
+                    >
+                        <svg className="w-6 h-6 text-blue-600 dark:text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" />
+                        </svg>
+                    </button>
+
+                    {/* 目标语言 */}
+                    <div className="flex-1">
+                        {showTargetCustomInput ? (
+                            <div className="flex gap-2">
+                                <input
+                                    type="text"
+                                    value={targetCustomLang}
+                                    onChange={(e) => setTargetCustomLang(e.target.value)}
+                                    placeholder="输入目标语言..."
+                                    className="flex-1 px-3 py-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                                />
+                                <button
+                                    onClick={() => {
+                                        setShowTargetCustomInput(false);
+                                        setTargetLang('en');
+                                        setTargetCustomLang('');
+                                    }}
+                                    className="p-2 text-gray-500 hover:text-gray-700"
+                                >
+                                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                                    </svg>
+                                </button>
+                            </div>
+                        ) : (
+                            <div className="flex gap-2">
+                                <select
+                                    value={targetLang}
+                                    onChange={(e) => setTargetLang(e.target.value)}
+                                    className="flex-1 px-3 py-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                                >
+                                    {COMMON_LANGUAGES.map(lang => (
+                                        <option key={lang.code} value={lang.code}>
+                                            {`${lang.name}（${lang.nativeName}）`}
+                                        </option>
+                                    ))}
+                                </select>
+                                <button
+                                    onClick={detectLocation}
+                                    disabled={isDetectingLocation}
+                                    className="p-2 text-blue-600 hover:text-blue-700 disabled:text-gray-400"
+                                    title="获取当地语言"
+                                >
+                                    {isDetectingLocation ? (
+                                        <div className="w-5 h-5 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
+                                    ) : (
+                                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+                                        </svg>
+                                    )}
+                                </button>
+                                <button
+                                    onClick={() => setShowTargetCustomInput(true)}
+                                    className="p-2 text-blue-600 hover:text-blue-700"
+                                    title="自定义语言"
+                                >
+                                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                                    </svg>
                                 </button>
                             </div>
                         )}
@@ -235,116 +438,264 @@ Important: Return ONLY the JSON object, no markdown formatting or other text.`;
                 </div>
             </div>
 
-            {/* 输入区域 */}
-            <div className="bg-white dark:bg-gray-800 p-4 rounded-lg shadow space-y-4">
-                <form onSubmit={handleSubmit} className="space-y-4">
-                    <textarea
-                        value={inputText}
-                        onChange={(e) => setInputText(e.target.value)}
-                        placeholder="输入要翻译的文本..."
-                        className="w-full p-3 border rounded-lg resize-none dark:bg-gray-700 dark:border-gray-600 dark:text-white"
-                        rows={3}
-                    />
-                    <div className="flex gap-2">
-                        <button
-                            type="submit"
-                            disabled={!inputText.trim()}
-                            className="flex-1 py-2 px-4 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:bg-gray-400"
-                        >
-                            翻译
-                        </button>
-                        <button
-                            type="button"
-                            onClick={isRecording ? stopRecording : startRecording}
-                            className={`flex-1 py-2 px-4 rounded-lg ${isRecording
-                                ? 'bg-red-600 hover:bg-red-700 text-white'
-                                : 'bg-green-600 hover:bg-green-700 text-white'
-                                }`}
-                        >
-                            {isRecording ? '停止录音' : '语音输入'}
-                        </button>
-                    </div>
-                </form>
-            </div>
-
-            {/* 对话历史 */}
-            <div className="space-y-4">
+            {/* 翻译历史记录 */}
+            <div className="space-y-4 mb-24">
                 {[...messages].reverse().map((message, index) => (
                     <div
                         key={message.id}
-                        className={`bg-white dark:bg-gray-800 p-4 rounded-lg shadow transition-all duration-300 ${index === 0  // 因为已经反转，所以最新的消息索引是 0
-                            ? 'border-2 border-blue-500 dark:border-blue-400 transform -translate-y-1 scale-102'
-                            : 'border border-gray-200 dark:border-gray-700 opacity-80'
+                        className={`bg-white dark:bg-gray-800 p-4 rounded-lg shadow transition-all duration-300 ${index === 0 ? 'ring-2 ring-blue-500 dark:ring-blue-400' : 'opacity-80'
                             }`}
                     >
-                        <div className="flex justify-between items-start mb-2">
-                            <div className="flex items-center gap-2">
-                                <span className="text-sm text-gray-500 dark:text-gray-400">
-                                    {new Date(message.timestamp).toLocaleString()}
-                                </span>
-                                {index === 0 && (  // 修改这里的判断条件
-                                    <span className="px-2 py-0.5 bg-blue-100 dark:bg-blue-900 text-blue-600 dark:text-blue-300 text-xs rounded-full">
-                                        最新
-                                    </span>
-                                )}
-                            </div>
-                        </div>
-
                         {/* 原文部分 */}
-                        <div>
-                            <div className="flex justify-between items-center mb-2">
-                                <div className="flex items-center gap-2">
-                                    <span className="text-sm text-gray-500 dark:text-gray-400">
-                                        原文
-                                    </span>
-                                    <span className="text-xs px-2 py-0.5 bg-gray-100 dark:bg-gray-700 rounded">
-                                        {message.sourceLangName}
-                                    </span>
-                                </div>
-                                <button
-                                    onClick={() => playVoice(message.text, message.sourceLang)}
-                                    className="p-1 text-gray-500 hover:text-blue-600"
-                                    title="朗读原文"
-                                >
-                                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-                                            d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z"
-                                        />
-                                    </svg>
-                                </button>
-                            </div>
-                            <p className={`text-lg text-gray-800 dark:text-gray-200 ${index === messages.length - 1 ? 'font-medium' : ''
-                                }`}>
+                        <div className="flex items-center justify-between">
+                            <p className="text-gray-500 dark:text-gray-400">
                                 {message.text}
                             </p>
-                        </div>
-
-                        {/* 译文部分 */}
-                        <div className="pt-3 border-t border-gray-200 dark:border-gray-700 mt-3">
-                            <div className="flex justify-between items-center mb-2">
-                                <span className="text-sm text-gray-500 dark:text-gray-400">
-                                    译文
-                                </span>
+                            {index === 0 && (
                                 <button
-                                    onClick={() => playVoice(message.translation, message.targetLang)}
-                                    className="p-1 text-gray-500 hover:text-blue-600"
-                                    title="朗读译文"
+                                    onClick={() => {
+                                        if (editingMessage?.id === message.id) {
+                                            setEditingMessage(null);
+                                            setEditingText('');
+                                        } else {
+                                            setEditingMessage(message);
+                                            setEditingText(message.text);
+                                        }
+                                    }}
+                                    className="ml-2 p-1.5 text-gray-400 hover:text-blue-600"
                                 >
                                     <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
-                                            d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z"
-                                        />
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                                    </svg>
+                                </button>
+                            )}
+                        </div>
+
+                        {/* 编辑框 */}
+                        {editingMessage?.id === message.id && (
+                            <div className="mt-2 space-y-2">
+                                <textarea
+                                    value={editingText}
+                                    onChange={(e) => setEditingText(e.target.value)}
+                                    className="w-full px-3 py-2 border rounded-lg dark:bg-gray-700 dark:border-gray-600 dark:text-white"
+                                    rows={2}
+                                    autoFocus
+                                />
+                                <div className="flex justify-end gap-2">
+                                    <button
+                                        onClick={() => handleUpdateText(message.id)}
+                                        className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700"
+                                    >
+                                        重新翻译
+                                    </button>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* 分割线 */}
+                        <div className="my-3 border-t border-gray-200 dark:border-gray-700"></div>
+
+                        {/* 译文部分 */}
+                        <div className="flex items-center justify-between">
+                            <p className="text-xl font-medium text-blue-600 dark:text-blue-400">
+                                {message.translation}
+                            </p>
+                            <div className="flex items-center gap-2">
+                                <button
+                                    onClick={() => playVoice(message.translation, message.targetLang)}
+                                    className="p-1.5 text-gray-500 hover:text-blue-600 transition-colors"
+                                    title="朗读"
+                                >
+                                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" />
+                                    </svg>
+                                </button>
+                                <button
+                                    onClick={() => {
+                                        navigator.clipboard.writeText(message.translation);
+                                        showToast('已复制译文', 'success');
+                                    }}
+                                    className="p-1.5 text-gray-500 hover:text-blue-600 transition-colors"
+                                    title="复制"
+                                >
+                                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2" />
+                                    </svg>
+                                </button>
+                                <button
+                                    onClick={() => setEnlargedText({
+                                        text: message.translation,
+                                        lang: message.targetLang
+                                    })}
+                                    className="p-1.5 text-gray-500 hover:text-blue-600 transition-colors"
+                                    title="放大显示"
+                                >
+                                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7" />
                                     </svg>
                                 </button>
                             </div>
-                            <p className={`text-lg text-blue-600 dark:text-blue-400 ${index === messages.length - 1 ? 'font-medium' : ''
-                                }`}>
-                                {message.translation}
-                            </p>
                         </div>
                     </div>
                 ))}
             </div>
+
+            {/* 放大显示浮窗 */}
+            {enlargedText && (
+                <div
+                    className="fixed inset-0 bg-black/60 flex items-center justify-center p-8 z-50 backdrop-blur-sm"
+                    onClick={() => setEnlargedText(null)}
+                >
+                    <div className="relative flex flex-col items-center max-w-4xl w-full">
+                        {/* 主卡片 */}
+                        <div
+                            className="bg-white dark:bg-gray-800 p-12 rounded-2xl shadow-2xl w-full relative animate-fade-in"
+                            onClick={e => e.stopPropagation()}
+                        >
+                            {/* 关闭按钮 */}
+                            <button
+                                onClick={() => setEnlargedText(null)}
+                                className="absolute top-6 right-6 p-2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300 rounded-full transition-all hover:bg-gray-100 dark:hover:bg-gray-700"
+                            >
+                                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                                </svg>
+                            </button>
+
+                            {/* 译文内容 */}
+                            <div className="mt-4 mb-16">
+                                <p className="text-5xl font-medium text-blue-600 dark:text-blue-400 text-center leading-relaxed break-words">
+                                    {enlargedText.text}
+                                </p>
+                            </div>
+
+                            {/* 功能按钮组 */}
+                            <div className="absolute bottom-6 right-6 flex gap-3">
+                                <button
+                                    onClick={() => playVoice(enlargedText.text, enlargedText.lang)}
+                                    className="p-3 text-gray-500 hover:text-blue-600 dark:text-gray-400 dark:hover:text-blue-400 rounded-full transition-all hover:bg-gray-100 dark:hover:bg-gray-700"
+                                    title="朗读"
+                                >
+                                    <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.536 8.464a5 5 0 010 7.072m2.828-9.9a9 9 0 010 12.728M5.586 15H4a1 1 0 01-1-1v-4a1 1 0 011-1h1.586l4.707-4.707C10.923 3.663 12 4.109 12 5v14c0 .891-1.077 1.337-1.707.707L5.586 15z" />
+                                    </svg>
+                                </button>
+                                <button
+                                    onClick={() => {
+                                        navigator.clipboard.writeText(enlargedText.text);
+                                        showToast('已复制译文', 'success');
+                                    }}
+                                    className="p-3 text-gray-500 hover:text-blue-600 dark:text-gray-400 dark:hover:text-blue-400 rounded-full transition-all hover:bg-gray-100 dark:hover:bg-gray-700"
+                                    title="复制"
+                                >
+                                    <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 5H6a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M8 5a2 2 0 002 2h2a2 2 0 002-2M8 5a2 2 0 012-2h2a2 2 0 012 2" />
+                                    </svg>
+                                </button>
+                            </div>
+                        </div>
+
+                        {/* 语音输入按钮 */}
+                        <button
+                            onClick={handleVoiceButtonClick}
+                            className={`mt-12 flex items-center gap-3 px-8 py-4 rounded-full shadow-lg transition-all ${isRecording
+                                ? 'bg-red-600 hover:bg-red-700'
+                                : 'bg-blue-600 hover:bg-blue-700'
+                                } text-white text-lg animate-bounce-gentle`}
+                        >
+                            <svg className="w-7 h-7" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
+                            </svg>
+                            <span>
+                                {showTargetCustomInput
+                                    ? targetCustomLang
+                                    : getLanguageDisplay(targetLang, targetCustomLang, false)}
+                            </span>
+                        </button>
+                    </div>
+                </div>
+            )}
+
+            {/* 录音提示浮层 */}
+            <RecordingOverlay
+                isRecording={isRecording}
+                duration={recordingDuration}
+                onStop={handleVoiceInput}
+            />
+
+            {/* 添加轻微弹跳动画 */}
+            <style>{`
+                @keyframes bounce-gentle {
+                    0%, 100% {
+                        transform: translateY(0);
+                    }
+                    50% {
+                        transform: translateY(-4px);
+                    }
+                }
+                .animate-bounce-gentle {
+                    animation: bounce-gentle 2s infinite;
+                }
+            `}</style>
+
+            {/* 悬浮的语音输入按钮 */}
+            <div className="fixed bottom-6 left-1/2 transform -translate-x-1/2 flex gap-4">
+                {/* 源语言按钮 */}
+                <button
+                    onClick={() => {
+                        setCurrentMode('source');
+                        handleVoiceInput();
+                    }}
+                    className={`flex items-center gap-2 px-6 py-3 rounded-full shadow-lg transition-all ${isRecording && currentMode === 'source'
+                        ? 'bg-red-600 hover:bg-red-700'
+                        : 'bg-indigo-600 hover:bg-indigo-700'
+                        } text-white`}
+                >
+                    <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
+                    </svg>
+                    <span>
+                        {showSourceCustomInput
+                            ? sourceCustomLang
+                            : getLanguageDisplay(sourceLang, sourceCustomLang, true)}
+                    </span>
+                </button>
+
+                {/* 目标语言按钮 */}
+                <button
+                    onClick={() => {
+                        setCurrentMode('target');
+                        handleVoiceInput();
+                    }}
+                    className={`flex items-center gap-2 px-6 py-3 rounded-full shadow-lg transition-all ${isRecording && currentMode === 'target'
+                        ? 'bg-red-600 hover:bg-red-700'
+                        : 'bg-blue-600 hover:bg-blue-700'
+                        } text-white`}
+                >
+                    <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
+                    </svg>
+                    <span>
+                        {showTargetCustomInput
+                            ? targetCustomLang
+                            : getLanguageDisplay(targetLang, targetCustomLang, false)}
+                    </span>
+                </button>
+            </div>
+
+            {/* 处理中提示 */}
+            {isProcessing && (
+                <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+                    <div className="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-xl max-w-sm w-full mx-4">
+                        <div className="flex items-center justify-center gap-3">
+                            <div className="animate-spin rounded-full h-8 w-8 border-2 border-blue-500 border-t-transparent"></div>
+                            <span className="text-lg text-gray-700 dark:text-gray-200">
+                                正在处理...
+                            </span>
+                        </div>
+                    </div>
+                </div>
+            )}
         </div>
     );
 };
