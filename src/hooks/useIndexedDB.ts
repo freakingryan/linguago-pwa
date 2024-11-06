@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { indexedDBService } from '../services/indexedDB';
 import { ConversationMessage, ConversationRecord } from '../types/conversation';
+import { VocabularyWord } from '../types/vocabulary';
 
 export const useIndexedDB = () => {
     const [isLoading, setIsLoading] = useState(true);
@@ -57,12 +58,56 @@ export const useIndexedDB = () => {
         }
     }, []);
 
+    // 获取所有单词
+    const getAllVocabulary = useCallback(async (): Promise<VocabularyWord[]> => {
+        try {
+            return await indexedDBService.getAllVocabulary();
+        } catch (err) {
+            console.error('Failed to get vocabulary:', err);
+            return [];
+        }
+    }, []);
+
+    // 添加单词
+    const addVocabularyWord = useCallback(async (word: VocabularyWord): Promise<void> => {
+        try {
+            await indexedDBService.addVocabularyWord(word);
+        } catch (err) {
+            console.error('Failed to add vocabulary word:', err);
+            throw err;
+        }
+    }, []);
+
+    // 添加多个单词
+    const addVocabularyWords = useCallback(async (words: VocabularyWord[]): Promise<void> => {
+        try {
+            await Promise.all(words.map(word => indexedDBService.addVocabularyWord(word)));
+        } catch (err) {
+            console.error('Failed to add vocabulary words:', err);
+            throw err;
+        }
+    }, []);
+
+    // 删除单词
+    const deleteVocabularyWord = useCallback(async (id: string): Promise<void> => {
+        try {
+            await indexedDBService.deleteVocabularyWord(id);
+        } catch (err) {
+            console.error('Failed to delete vocabulary word:', err);
+            throw err;
+        }
+    }, []);
+
     return {
         isLoading,
         error,
         getCurrentConversation,
         saveCurrentConversation,
         getAllConversations,
-        addConversation
+        addConversation,
+        getAllVocabulary,
+        addVocabularyWord,
+        addVocabularyWords,
+        deleteVocabularyWord
     };
 }; 

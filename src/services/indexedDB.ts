@@ -2,9 +2,10 @@ import { ConversationMessage } from '../types/conversation';
 
 export class IndexedDBService {
     private readonly DB_NAME = 'translatorApp';
-    private readonly DB_VERSION = 2;
+    private readonly DB_VERSION = 3;
     private readonly CONVERSATION_STORE = 'conversations';
     private readonly CURRENT_CONVERSATION_STORE = 'currentConversation';
+    private readonly VOCABULARY_STORE = 'vocabulary';
     private db: IDBDatabase | null = null;
     private initPromise: Promise<void> | null = null;
 
@@ -32,24 +33,30 @@ export class IndexedDBService {
                 console.log('Database upgrade needed');
                 const db = (event.target as IDBOpenDBRequest).result;
 
-                if (db.objectStoreNames.contains(this.CONVERSATION_STORE)) {
-                    db.deleteObjectStore(this.CONVERSATION_STORE);
+                if (!db.objectStoreNames.contains(this.CONVERSATION_STORE)) {
+                    const conversationStore = db.createObjectStore(this.CONVERSATION_STORE, {
+                        keyPath: 'id'
+                    });
+                    conversationStore.createIndex('timestamp', 'timestamp', { unique: false });
+                    conversationStore.createIndex('startTime', 'startTime', { unique: false });
                 }
-                if (db.objectStoreNames.contains(this.CURRENT_CONVERSATION_STORE)) {
-                    db.deleteObjectStore(this.CURRENT_CONVERSATION_STORE);
+
+                if (!db.objectStoreNames.contains(this.CURRENT_CONVERSATION_STORE)) {
+                    db.createObjectStore(this.CURRENT_CONVERSATION_STORE, {
+                        keyPath: 'id'
+                    });
                 }
 
-                const conversationStore = db.createObjectStore(this.CONVERSATION_STORE, {
-                    keyPath: 'id'
-                });
-                conversationStore.createIndex('timestamp', 'timestamp', { unique: false });
-                conversationStore.createIndex('startTime', 'startTime', { unique: false });
-
-                db.createObjectStore(this.CURRENT_CONVERSATION_STORE, {
-                    keyPath: 'id'
-                });
-
-                console.log('Object stores created successfully');
+                if (!db.objectStoreNames.contains(this.VOCABULARY_STORE)) {
+                    const vocabularyStore = db.createObjectStore(this.VOCABULARY_STORE, {
+                        keyPath: 'id',
+                        autoIncrement: false
+                    });
+                    vocabularyStore.createIndex('level', 'level', { unique: false });
+                    vocabularyStore.createIndex('timestamp', 'timestamp', { unique: false });
+                    vocabularyStore.createIndex('word', 'word', { unique: false });
+                    console.log('Vocabulary store created');
+                }
             };
         });
 
@@ -227,6 +234,99 @@ export class IndexedDBService {
         } catch (error) {
             console.error('Error saving current conversation:', error);
         }
+    }
+
+    async getAllVocabulary(): Promise<any[]> {
+        await this.ensureInitialized();
+        if (!this.db) throw new Error('Database not initialized');
+
+        return new Promise((resolve, reject) => {
+            try {
+                const transaction = this.db!.transaction([this.VOCABULARY_STORE], 'readonly');
+                const store = transaction.objectStore(this.VOCABULARY_STORE);
+                const request = store.getAll();
+
+                request.onerror = () => {
+                    reject(new Error('Failed to get vocabulary'));
+                };
+
+                request.onsuccess = () => {
+                    resolve(request.result || []);
+                };
+            } catch (error) {
+                console.error('Error in getAllVocabulary:', error);
+                reject(error);
+            }
+        });
+    }
+
+    async addVocabularyWord(word: any): Promise<void> {
+        await this.ensureInitialized();
+        if (!this.db) throw new Error('Database not initialized');
+
+        return new Promise((resolve, reject) => {
+            try {
+                const transaction = this.db!.transaction([this.VOCABULARY_STORE], 'readwrite');
+                const store = transaction.objectStore(this.VOCABULARY_STORE);
+
+                if (!word.id) {
+                    reject(new Error('Word object must have an id'));
+                    return;
+                }
+
+                const request = store.add(word);
+
+                request.onerror = (event) => {
+                    console.error('Error in addVocabularyWord:', event);
+                    reject(new Error('Failed to add word'));
+                };
+
+                request.onsuccess = () => {
+                    resolve();
+                };
+            } catch (error) {
+                console.error('Error in addVocabularyWord:', error);
+                reject(error);
+            }
+        });
+    }
+
+    async updateVocabularyWord(word: any): Promise<void> {
+        await this.ensureInitialized();
+        if (!this.db) throw new Error('Database not initialized');
+
+        return new Promise((resolve, reject) => {
+            const transaction = this.db!.transaction([this.VOCABULARY_STORE], 'readwrite');
+            const store = transaction.objectStore(this.VOCABULARY_STORE);
+            const request = store.put(word);
+
+            request.onerror = () => {
+                reject(new Error('Failed to update word'));
+            };
+
+            request.onsuccess = () => {
+                resolve();
+            };
+        });
+    }
+
+    async deleteVocabularyWord(id: string): Promise<void> {
+        await this.ensureInitialized();
+        if (!this.db) throw new Error('Database not initialized');
+
+        return new Promise((resolve, reject) => {
+            const transaction = this.db!.transaction([this.VOCABULARY_STORE], 'readwrite');
+            const store = transaction.objectStore(this.VOCABULARY_STORE);
+            const request = store.delete(id);
+
+            request.onerror = () => {
+                reject(new Error('Failed to delete word'));
+            };
+
+            request.onsuccess = () => {
+                resolve();
+            };
+        });
     }
 }
 

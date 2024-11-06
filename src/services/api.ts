@@ -93,14 +93,12 @@ export class UnifiedApiService {
 
     // 处理 JSON 响应
     private handleJsonResponse(response: string): any {
-        const cleanResponse = response.replace(/```json\n?|\n?```/g, '').trim();
         try {
+            const cleanResponse = response.replace(/```json\n?|\n?```/g, '').trim();
             const result = JSON.parse(cleanResponse);
-            if (!result.detectedLang || !result.sourceLangName || !result.translation) {
-                throw new Error('Invalid response format');
-            }
             return result;
         } catch (error) {
+            console.error('JSON parse error:', error);
             throw new Error('Invalid JSON response format');
         }
     }

@@ -46,4 +46,45 @@ Follow these rules:
 5. Ensure accurate translation while maintaining the original structure
 6. Handle any special characters or formatting appropriately`;
     }
+
+    static getWordRecommendationPrompt(condition: string): string {
+        return `请根据以下条件推荐一组日语单词："${condition}"
+请按照以下 JSON 格式返回数据：
+{
+    "words": [
+        {
+            "word": "日语单词",
+            "reading": "读音",
+            "meaning": "中文含义",
+            "level": "JLPT等级(N1-N5)",
+            "types": ["词性"],
+            "tags": ["相关标签"],
+            "examples": [
+                {
+                    "japanese": "日语例句",
+                    "reading": "例句读音",
+                    "meaning": "例句翻译"
+                }
+            ],
+            "etymology": "词源/历史典故（如果有）",
+            "mnemonic": "助记方法",
+            "associations": ["联想记忆点"],
+            "commonCollocations": ["常见搭配"],
+            "similarWords": [
+                {
+                    "word": "相似词",
+                    "explanation": "区别说明"
+                }
+            ],
+            "usageNotes": "使用注意事项",
+            "culturalNotes": "文化背景注释",
+            "frequency": 使用频率(1-5)
+        }
+    ],
+    "category": "推荐分类",
+    "description": "推荐说明",
+    "totalCount": 推荐单词总数
+}
+请确保返回的是合法的 JSON 格式，并包含尽可能详细的信息。`;
+    }
 } 
