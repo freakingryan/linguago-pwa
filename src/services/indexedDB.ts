@@ -5,6 +5,7 @@ export class IndexedDBService {
     private readonly DB_VERSION = 2;
     private readonly CONVERSATION_STORE = 'conversations';
     private readonly CURRENT_CONVERSATION_STORE = 'currentConversation';
+    private readonly VOCABULARY_STORE = 'vocabulary';
     private db: IDBDatabase | null = null;
     private initPromise: Promise<void> | null = null;
 
@@ -48,6 +49,14 @@ export class IndexedDBService {
                 db.createObjectStore(this.CURRENT_CONVERSATION_STORE, {
                     keyPath: 'id'
                 });
+
+                if (!db.objectStoreNames.contains(this.VOCABULARY_STORE)) {
+                    const vocabularyStore = db.createObjectStore(this.VOCABULARY_STORE, {
+                        keyPath: 'id'
+                    });
+                    vocabularyStore.createIndex('level', 'level', { unique: false });
+                    vocabularyStore.createIndex('timestamp', 'timestamp', { unique: false });
+                }
 
                 console.log('Object stores created successfully');
             };
@@ -227,6 +236,82 @@ export class IndexedDBService {
         } catch (error) {
             console.error('Error saving current conversation:', error);
         }
+    }
+
+    async getAllVocabulary(): Promise<any[]> {
+        await this.ensureInitialized();
+        if (!this.db) throw new Error('Database not initialized');
+
+        return new Promise((resolve, reject) => {
+            const transaction = this.db!.transaction([this.VOCABULARY_STORE], 'readonly');
+            const store = transaction.objectStore(this.VOCABULARY_STORE);
+            const request = store.getAll();
+
+            request.onerror = () => {
+                reject(new Error('Failed to get vocabulary'));
+            };
+
+            request.onsuccess = () => {
+                resolve(request.result || []);
+            };
+        });
+    }
+
+    async addVocabularyWord(word: any): Promise<void> {
+        await this.ensureInitialized();
+        if (!this.db) throw new Error('Database not initialized');
+
+        return new Promise((resolve, reject) => {
+            const transaction = this.db!.transaction([this.VOCABULARY_STORE], 'readwrite');
+            const store = transaction.objectStore(this.VOCABULARY_STORE);
+            const request = store.add(word);
+
+            request.onerror = () => {
+                reject(new Error('Failed to add word'));
+            };
+
+            request.onsuccess = () => {
+                resolve();
+            };
+        });
+    }
+
+    async updateVocabularyWord(word: any): Promise<void> {
+        await this.ensureInitialized();
+        if (!this.db) throw new Error('Database not initialized');
+
+        return new Promise((resolve, reject) => {
+            const transaction = this.db!.transaction([this.VOCABULARY_STORE], 'readwrite');
+            const store = transaction.objectStore(this.VOCABULARY_STORE);
+            const request = store.put(word);
+
+            request.onerror = () => {
+                reject(new Error('Failed to update word'));
+            };
+
+            request.onsuccess = () => {
+                resolve();
+            };
+        });
+    }
+
+    async deleteVocabularyWord(id: string): Promise<void> {
+        await this.ensureInitialized();
+        if (!this.db) throw new Error('Database not initialized');
+
+        return new Promise((resolve, reject) => {
+            const transaction = this.db!.transaction([this.VOCABULARY_STORE], 'readwrite');
+            const store = transaction.objectStore(this.VOCABULARY_STORE);
+            const request = store.delete(id);
+
+            request.onerror = () => {
+                reject(new Error('Failed to delete word'));
+            };
+
+            request.onsuccess = () => {
+                resolve();
+            };
+        });
     }
 }
 
