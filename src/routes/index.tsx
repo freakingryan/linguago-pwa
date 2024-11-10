@@ -9,6 +9,7 @@ import Vocabulary from '../pages/Vocabulary';
 import LyricsManagement from '../pages/LyricsManagement';
 import LyricsDetail from '../pages/LyricsDetail';
 import ErrorBoundary from '../components/ErrorBoundary';
+import Clipboard from '../pages/Clipboard';
 
 export const router = createHashRouter([
     {
@@ -47,6 +48,10 @@ export const router = createHashRouter([
             {
                 path: 'lyrics/:id',
                 element: <LyricsDetail />,
+            },
+            {
+                path: 'clipboard',
+                element: <Clipboard />,
             },
         ],
     },

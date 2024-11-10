@@ -3,6 +3,7 @@ import { indexedDBService } from '../services/indexedDB';
 import { ConversationMessage, ConversationRecord } from '../types/conversation';
 import { VocabularyWord } from '../types/vocabulary';
 import { Lyrics } from '../types/lyrics';
+import { ClipboardItem } from '../types/clipboard';
 
 export const useIndexedDB = () => {
     const [isLoading, setIsLoading] = useState(true);
@@ -128,6 +129,42 @@ export const useIndexedDB = () => {
         }
     }, []);
 
+    const addClipboardItem = useCallback(async (item: ClipboardItem): Promise<void> => {
+        try {
+            await indexedDBService.addClipboardItem(item);
+        } catch (err) {
+            console.error('Failed to add clipboard item:', err);
+            throw err;
+        }
+    }, []);
+
+    const getAllClipboardItems = useCallback(async (): Promise<ClipboardItem[]> => {
+        try {
+            return await indexedDBService.getAllClipboardItems();
+        } catch (err) {
+            console.error('Failed to get clipboard items:', err);
+            return [];
+        }
+    }, []);
+
+    const updateClipboardItem = useCallback(async (item: ClipboardItem): Promise<void> => {
+        try {
+            await indexedDBService.updateClipboardItem(item);
+        } catch (err) {
+            console.error('Failed to update clipboard item:', err);
+            throw err;
+        }
+    }, []);
+
+    const deleteClipboardItem = useCallback(async (id: string): Promise<void> => {
+        try {
+            await indexedDBService.deleteClipboardItem(id);
+        } catch (err) {
+            console.error('Failed to delete clipboard item:', err);
+            throw err;
+        }
+    }, []);
+
     return {
         isLoading,
         error,
@@ -142,5 +179,9 @@ export const useIndexedDB = () => {
         addLyrics,
         getAllLyrics,
         deleteLyrics,
+        addClipboardItem,
+        getAllClipboardItems,
+        updateClipboardItem,
+        deleteClipboardItem,
     };
 }; 
