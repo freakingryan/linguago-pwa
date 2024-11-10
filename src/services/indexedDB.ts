@@ -1,11 +1,15 @@
 import { ConversationMessage } from '../types/conversation';
+import { Lyrics } from '../types/lyrics';
+import { ClipboardItem } from '../types/clipboard';
 
 export class IndexedDBService {
     private readonly DB_NAME = 'translatorApp';
-    private readonly DB_VERSION = 3;
+    private readonly DB_VERSION = 4;
     private readonly CONVERSATION_STORE = 'conversations';
     private readonly CURRENT_CONVERSATION_STORE = 'currentConversation';
     private readonly VOCABULARY_STORE = 'vocabulary';
+    private readonly LYRICS_STORE = 'lyrics';
+    private readonly CLIPBOARD_STORE = 'clipboard';
     private db: IDBDatabase | null = null;
     private initPromise: Promise<void> | null = null;
 
@@ -56,6 +60,28 @@ export class IndexedDBService {
                     vocabularyStore.createIndex('timestamp', 'timestamp', { unique: false });
                     vocabularyStore.createIndex('word', 'word', { unique: false });
                     console.log('Vocabulary store created');
+                }
+
+                if (!db.objectStoreNames.contains(this.LYRICS_STORE)) {
+                    const lyricsStore = db.createObjectStore(this.LYRICS_STORE, {
+                        keyPath: 'id',
+                        autoIncrement: false
+                    });
+                    lyricsStore.createIndex('createdAt', 'createdAt', { unique: false });
+                    lyricsStore.createIndex('updatedAt', 'updatedAt', { unique: false });
+                    lyricsStore.createIndex('title', 'title', { unique: false });
+                    console.log('Lyrics store created');
+                }
+
+                if (!db.objectStoreNames.contains(this.CLIPBOARD_STORE)) {
+                    const clipboardStore = db.createObjectStore(this.CLIPBOARD_STORE, {
+                        keyPath: 'id',
+                        autoIncrement: false
+                    });
+                    clipboardStore.createIndex('createdAt', 'createdAt', { unique: false });
+                    clipboardStore.createIndex('updatedAt', 'updatedAt', { unique: false });
+                    clipboardStore.createIndex('title', 'title', { unique: false });
+                    console.log('Clipboard store created');
                 }
             };
         });
@@ -326,6 +352,104 @@ export class IndexedDBService {
             request.onsuccess = () => {
                 resolve();
             };
+        });
+    }
+
+    async addLyrics(lyrics: Lyrics): Promise<void> {
+        await this.ensureInitialized();
+        if (!this.db) throw new Error('Database not initialized');
+
+        return new Promise((resolve, reject) => {
+            const transaction = this.db!.transaction(this.LYRICS_STORE, 'readwrite');
+            const store = transaction.objectStore(this.LYRICS_STORE);
+            const request = store.add(lyrics);
+
+            request.onerror = () => reject(request.error);
+            request.onsuccess = () => resolve();
+        });
+    }
+
+    async getAllLyrics(): Promise<Lyrics[]> {
+        await this.ensureInitialized();
+        if (!this.db) throw new Error('Database not initialized');
+
+        return new Promise((resolve, reject) => {
+            const transaction = this.db!.transaction(this.LYRICS_STORE, 'readonly');
+            const store = transaction.objectStore(this.LYRICS_STORE);
+            const request = store.getAll();
+
+            request.onerror = () => reject(request.error);
+            request.onsuccess = () => resolve(request.result);
+        });
+    }
+
+    async deleteLyrics(id: string): Promise<void> {
+        await this.ensureInitialized();
+        if (!this.db) throw new Error('Database not initialized');
+
+        return new Promise((resolve, reject) => {
+            const transaction = this.db!.transaction(this.LYRICS_STORE, 'readwrite');
+            const store = transaction.objectStore(this.LYRICS_STORE);
+            const request = store.delete(id);
+
+            request.onerror = () => reject(request.error);
+            request.onsuccess = () => resolve();
+        });
+    }
+
+    async addClipboardItem(item: ClipboardItem): Promise<void> {
+        await this.ensureInitialized();
+        if (!this.db) throw new Error('Database not initialized');
+
+        return new Promise((resolve, reject) => {
+            const transaction = this.db!.transaction(this.CLIPBOARD_STORE, 'readwrite');
+            const store = transaction.objectStore(this.CLIPBOARD_STORE);
+            const request = store.add(item);
+
+            request.onerror = () => reject(request.error);
+            request.onsuccess = () => resolve();
+        });
+    }
+
+    async getAllClipboardItems(): Promise<ClipboardItem[]> {
+        await this.ensureInitialized();
+        if (!this.db) throw new Error('Database not initialized');
+
+        return new Promise((resolve, reject) => {
+            const transaction = this.db!.transaction(this.CLIPBOARD_STORE, 'readonly');
+            const store = transaction.objectStore(this.CLIPBOARD_STORE);
+            const request = store.getAll();
+
+            request.onerror = () => reject(request.error);
+            request.onsuccess = () => resolve(request.result);
+        });
+    }
+
+    async updateClipboardItem(item: ClipboardItem): Promise<void> {
+        await this.ensureInitialized();
+        if (!this.db) throw new Error('Database not initialized');
+
+        return new Promise((resolve, reject) => {
+            const transaction = this.db!.transaction(this.CLIPBOARD_STORE, 'readwrite');
+            const store = transaction.objectStore(this.CLIPBOARD_STORE);
+            const request = store.put(item);
+
+            request.onerror = () => reject(request.error);
+            request.onsuccess = () => resolve();
+        });
+    }
+
+    async deleteClipboardItem(id: string): Promise<void> {
+        await this.ensureInitialized();
+        if (!this.db) throw new Error('Database not initialized');
+
+        return new Promise((resolve, reject) => {
+            const transaction = this.db!.transaction(this.CLIPBOARD_STORE, 'readwrite');
+            const store = transaction.objectStore(this.CLIPBOARD_STORE);
+            const request = store.delete(id);
+
+            request.onerror = () => reject(request.error);
+            request.onsuccess = () => resolve();
         });
     }
 }

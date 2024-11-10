@@ -76,6 +76,17 @@ export class UnifiedApiService {
             `${this.apiUrl}/models/${this.model}:${endpoint}?key=${this.apiKey}`,
             data
         );
+
+        // 检查安全过滤
+        if (response.data.candidates?.[0]?.finishReason === "SAFETY") {
+            throw new Error('内容被安全过滤，请修改后重试');
+        }
+
+        // 检查响应格式
+        if (!response.data.candidates?.[0]?.content?.parts?.[0]?.text) {
+            throw new Error('API 返回格式错误');
+        }
+
         return response.data.candidates[0].content.parts[0].text;
     }
 
@@ -104,7 +115,7 @@ export class UnifiedApiService {
     }
 
     // 公共方法：文本生成（翻译）
-    async generateText(prompt: string, formatAsJson?: boolean): Promise<string> {
+    async generateText(prompt: string, formatAsJson: boolean = false): Promise<any> {
         try {
             let response;
             if (this.isGeminiApi) {
@@ -117,7 +128,22 @@ export class UnifiedApiService {
                 });
             }
 
-            return formatAsJson ? this.handleJsonResponse(response) : response;
+            if (formatAsJson) {
+                try {
+                    // 如果响应已经是对象，直接返回
+                    if (typeof response === 'object') {
+                        return response;
+                    }
+                    // 清理响应中的 markdown 标记
+                    const cleanResponse = response.replace(/```json\n?|\n?```/g, '').trim();
+                    return JSON.parse(cleanResponse);
+                } catch (error) {
+                    console.error('JSON parse error:', error);
+                    throw new Error('Invalid JSON response format');
+                }
+            }
+
+            return response;
         } catch (error: any) {
             console.error('Generate text error:', error);
             throw new Error(error.response?.data?.error?.message || '生成文本失败，请重试');

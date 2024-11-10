@@ -2,6 +2,8 @@ import { useState, useEffect, useCallback } from 'react';
 import { indexedDBService } from '../services/indexedDB';
 import { ConversationMessage, ConversationRecord } from '../types/conversation';
 import { VocabularyWord } from '../types/vocabulary';
+import { Lyrics } from '../types/lyrics';
+import { ClipboardItem } from '../types/clipboard';
 
 export const useIndexedDB = () => {
     const [isLoading, setIsLoading] = useState(true);
@@ -98,6 +100,71 @@ export const useIndexedDB = () => {
         }
     }, []);
 
+    // 添加歌词相关方法
+    const addLyrics = useCallback(async (lyrics: Lyrics): Promise<void> => {
+        try {
+            await indexedDBService.addLyrics(lyrics);
+        } catch (err) {
+            console.error('Failed to add lyrics:', err);
+            throw err;
+        }
+    }, []);
+
+    const getAllLyrics = useCallback(async (): Promise<Lyrics[]> => {
+        try {
+            return await indexedDBService.getAllLyrics();
+        } catch (err) {
+            console.error('Failed to get lyrics:', err);
+            return [];
+        }
+    }, []);
+
+    // 添加删除歌词方法
+    const deleteLyrics = useCallback(async (id: string): Promise<void> => {
+        try {
+            await indexedDBService.deleteLyrics(id);
+        } catch (err) {
+            console.error('Failed to delete lyrics:', err);
+            throw err;
+        }
+    }, []);
+
+    const addClipboardItem = useCallback(async (item: ClipboardItem): Promise<void> => {
+        try {
+            await indexedDBService.addClipboardItem(item);
+        } catch (err) {
+            console.error('Failed to add clipboard item:', err);
+            throw err;
+        }
+    }, []);
+
+    const getAllClipboardItems = useCallback(async (): Promise<ClipboardItem[]> => {
+        try {
+            return await indexedDBService.getAllClipboardItems();
+        } catch (err) {
+            console.error('Failed to get clipboard items:', err);
+            return [];
+        }
+    }, []);
+
+    const updateClipboardItem = useCallback(async (item: ClipboardItem): Promise<void> => {
+        try {
+            await indexedDBService.updateClipboardItem(item);
+        } catch (err) {
+            console.error('Failed to update clipboard item:', err);
+            throw err;
+        }
+    }, []);
+
+    const deleteClipboardItem = useCallback(async (id: string): Promise<void> => {
+        try {
+            await indexedDBService.deleteClipboardItem(id);
+        } catch (err) {
+            console.error('Failed to delete clipboard item:', err);
+            throw err;
+        }
+    }, []);
+
     return {
         isLoading,
         error,
@@ -108,6 +175,13 @@ export const useIndexedDB = () => {
         getAllVocabulary,
         addVocabularyWord,
         addVocabularyWords,
-        deleteVocabularyWord
+        deleteVocabularyWord,
+        addLyrics,
+        getAllLyrics,
+        deleteLyrics,
+        addClipboardItem,
+        getAllClipboardItems,
+        updateClipboardItem,
+        deleteClipboardItem,
     };
 }; 
