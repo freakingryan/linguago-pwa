@@ -1,8 +1,23 @@
 {
     "name": "LinguaGo",
     "short_name": "LinguaGo",
+    "description": "多语言学习与翻译 PWA 应用",
     "start_url": "/linguago-pwa/",
     "display": "standalone",
     "background_color": "#ffffff",
-    "theme_color": "#000000"
+    "theme_color": "#ffffff",
+    "icons": [
+        {
+            "src": "/linguago-pwa/icons/icon-192x192.png",
+            "sizes": "192x192",
+            "type": "image/png",
+            "purpose": "any maskable"
+        },
+        {
+            "src": "/linguago-pwa/icons/icon-512x512.png",
+            "sizes": "512x512",
+            "type": "image/png",
+            "purpose": "any maskable"
+        }
+    ]
 }

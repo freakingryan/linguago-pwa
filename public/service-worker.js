@@ -3,6 +3,10 @@ const urlsToCache = [
     '/linguago-pwa/',
     '/linguago-pwa/index.html',
     '/linguago-pwa/manifest.json',
+    '/linguago-pwa/icons/icon-192x192.png',
+    '/linguago-pwa/icons/icon-512x512.png',
+    '/linguago-pwa/assets/index.css',
+    '/linguago-pwa/assets/index.js',
 ];
 
 self.addEventListener('install', (event) => {
@@ -16,6 +20,7 @@ self.addEventListener('install', (event) => {
                 });
             })
     );
+    self.skipWaiting();
 });
 
 self.addEventListener('fetch', (event) => {
@@ -25,9 +30,23 @@ self.addEventListener('fetch', (event) => {
                 if (response) {
                     return response;
                 }
-                return fetch(event.request).catch(() => {
-                    console.log('Fetch failed for:', event.request.url);
-                });
+                const fetchRequest = event.request.clone();
+                return fetch(fetchRequest)
+                    .then(response => {
+                        if (!response || response.status !== 200 || response.type !== 'basic') {
+                            return response;
+                        }
+                        const responseToCache = response.clone();
+                        caches.open(CACHE_NAME)
+                            .then(cache => {
+                                cache.put(event.request, responseToCache);
+                            });
+                        return response;
+                    })
+                    .catch(() => {
+                        console.log('Fetch failed for:', event.request.url);
+                        return new Response('离线模式');
+                    });
             })
     );
 });
@@ -45,4 +64,32 @@ self.addEventListener('activate', (event) => {
             );
         })
     );
+    self.clients.claim();
+});
+
+self.addEventListener('push', (event) => {
+    if (event.data) {
+        const data = event.data.json();
+        const options = {
+            body: data.body,
+            icon: '/linguago-pwa/icons/icon-192x192.png',
+            badge: '/linguago-pwa/icons/icon-192x192.png',
+            vibrate: [100, 50, 100],
+            data: {
+                url: data.url
+            }
+        };
+        event.waitUntil(
+            self.registration.showNotification(data.title, options)
+        );
+    }
+});
+
+self.addEventListener('notificationclick', (event) => {
+    event.notification.close();
+    if (event.notification.data.url) {
+        event.waitUntil(
+            clients.openWindow(event.notification.data.url)
+        );
+    }
 }); 
