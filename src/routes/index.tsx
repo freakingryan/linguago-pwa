@@ -6,6 +6,8 @@ import History from '../pages/History';
 import Conversation from '../pages/Conversation';
 import ConversationHistory from '../pages/ConversationHistory';
 import Vocabulary from '../pages/Vocabulary';
+import LyricsManagement from '../pages/LyricsManagement';
+import LyricsDetail from '../pages/LyricsDetail';
 import ErrorBoundary from '../components/ErrorBoundary';
 
 export const router = createHashRouter([
@@ -37,6 +39,14 @@ export const router = createHashRouter([
             {
                 path: 'vocabulary',
                 element: <Vocabulary />,
+            },
+            {
+                path: 'lyrics',
+                element: <LyricsManagement />,
+            },
+            {
+                path: 'lyrics/:id',
+                element: <LyricsDetail />,
             },
         ],
     },
