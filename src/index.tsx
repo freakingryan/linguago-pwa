@@ -15,20 +15,33 @@ if ('serviceWorker' in navigator) {
             const registration = await navigator.serviceWorker.register('/linguago-pwa/service-worker.js');
             console.log('ServiceWorker registration successful with scope:', registration.scope);
 
-            // 检查更新
-            registration.addEventListener('updatefound', () => {
-                const newWorker = registration.installing;
-                if (newWorker) {
-                    newWorker.addEventListener('statechange', () => {
-                        if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
-                            // 有新版本可用
-                            if (confirm('发现新版本，是否立即更新？')) {
-                                window.location.reload();
-                            }
-                        }
-                    });
-                }
+            // 只在页面加载时检查一次更新
+            let refreshing = false;
+            navigator.serviceWorker.addEventListener('controllerchange', () => {
+                if (refreshing) return;
+                refreshing = true;
+                window.location.reload();
             });
+
+            // 定期检查更新（比如每小时检查一次）
+            setInterval(async () => {
+                try {
+                    await registration.update();
+                    const newWorker = registration.installing || registration.waiting;
+
+                    if (newWorker) {
+                        newWorker.addEventListener('statechange', () => {
+                            if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
+                                // 有新版本可用，但不立即提示，等待下次刷新时自动更新
+                                console.log('New version available, will update on next reload');
+                            }
+                        });
+                    }
+                } catch (error) {
+                    console.error('Service worker update check failed:', error);
+                }
+            }, 3 * 24 * 60 * 60 * 1000);
+
         } catch (error) {
             console.error('ServiceWorker registration failed:', error);
         }
@@ -37,11 +50,9 @@ if ('serviceWorker' in navigator) {
     // 处理离线/在线状态变化
     window.addEventListener('online', () => {
         console.log('应用已恢复在线状态');
-        // 这里可以添加在线状态的处理逻辑
     });
 
     window.addEventListener('offline', () => {
         console.log('应用已进入离线状态');
-        // 这里可以添加离线状态的处理逻辑
     });
 } 
