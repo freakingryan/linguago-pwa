@@ -35,26 +35,50 @@ export default defineConfig({
         globPatterns: ['**/*.{js,css,html,ico,png,svg,json}'],
         runtimeCaching: [
           {
-            urlPattern: /^https:\/\/your-api-domain\.com\/.*/i,
+            urlPattern: /^https:\/\/freakingryan\.github\.io\/linguago-pwa\/.*/i,
             handler: 'NetworkFirst',
             options: {
-              cacheName: 'api-cache',
+              cacheName: 'site-cache',
+              networkTimeoutSeconds: 5,
               expiration: {
                 maxEntries: 100,
-                maxAgeSeconds: 24 * 60 * 60 // 24 hours
+                maxAgeSeconds: 72 * 60 * 60 // 3 days
+              },
+              cacheableResponse: {
+                statuses: [0, 200]
               }
             }
           }
         ]
+      },
+      devOptions: {
+        enabled: true,
+        type: 'module',
+        navigateFallback: 'index.html'
       }
     })
   ],
   build: {
+    assetsDir: 'assets',
     rollupOptions: {
       output: {
-        manualChunks: undefined
+        assetFileNames: 'assets/[name]-[hash][extname]',
+        chunkFileNames: 'assets/[name]-[hash].js',
+        entryFileNames: 'assets/[name]-[hash].js',
       }
     },
-    sourcemap: false
+    sourcemap: true
+  },
+  server: {
+    port: 5173,
+    strictPort: true,
+    host: true,
+    open: true
+  },
+  preview: {
+    port: 4173,
+    strictPort: true,
+    host: true,
+    open: true
   }
 })
