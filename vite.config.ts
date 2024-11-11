@@ -9,23 +9,41 @@ export default defineConfig({
     react(),
     VitePWA({
       registerType: 'autoUpdate',
-      includeAssets: ['favicon.ico', 'apple-touch-icon.png', 'mask-icon.svg'],
+      includeAssets: ['favicon.ico', 'icons/*'],
       manifest: {
         name: 'LinguaGo',
         short_name: 'LinguaGo',
         description: 'AI驱动的语言学习助手',
         theme_color: '#ffffff',
         start_url: '/linguago-pwa/',
+        id: '/linguago-pwa/',
+        scope: '/linguago-pwa/',
         icons: [
           {
-            src: 'icons/icon-192x192.png',
-            sizes: '192x192',
-            type: 'image/png'
-          },
+            src: 'icons/icon.svg',
+            sizes: 'any',
+            type: 'image/svg+xml',
+            purpose: 'any maskable'
+          }
+        ],
+        display: 'standalone',
+        background_color: '#ffffff',
+        prefer_related_applications: false,
+        categories: ['education', 'productivity']
+      },
+      workbox: {
+        globPatterns: ['**/*.{js,css,html,ico,png,svg,json}'],
+        runtimeCaching: [
           {
-            src: 'icons/icon-512x512.png',
-            sizes: '512x512',
-            type: 'image/png'
+            urlPattern: /^https:\/\/your-api-domain\.com\/.*/i,
+            handler: 'NetworkFirst',
+            options: {
+              cacheName: 'api-cache',
+              expiration: {
+                maxEntries: 100,
+                maxAgeSeconds: 24 * 60 * 60 // 24 hours
+              }
+            }
           }
         ]
       }
