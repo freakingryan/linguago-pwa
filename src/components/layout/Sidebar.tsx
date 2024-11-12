@@ -80,18 +80,18 @@ const Sidebar = ({ isOpen, onClose }: SidebarProps) => {
                             {expandedMenus.includes('translate') && (
                                 <div className="ml-4 mt-2 space-y-2">
                                     <Link
+                                        to="/"
+                                        className="block px-4 py-2 rounded-md text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700"
+                                        onClick={onClose}
+                                    >
+                                        句子翻译
+                                    </Link>
+                                    <Link
                                         to="/conversation"
                                         className="block px-4 py-2 rounded-md text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700"
                                         onClick={onClose}
                                     >
                                         实时对话
-                                    </Link>
-                                    <Link
-                                        to="/history"
-                                        className="block px-4 py-2 rounded-md text-gray-700 dark:text-gray-200 hover:bg-gray-100 dark:hover:bg-gray-700"
-                                        onClick={onClose}
-                                    >
-                                        对话历史
                                     </Link>
                                 </div>
                             )}
