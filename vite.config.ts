@@ -9,76 +9,34 @@ export default defineConfig({
     react(),
     VitePWA({
       registerType: 'autoUpdate',
-      includeAssets: ['favicon.ico', 'icons/*'],
+      includeAssets: ['favicon.ico', 'apple-touch-icon.png', 'mask-icon.svg'],
       manifest: {
         name: 'LinguaGo',
         short_name: 'LinguaGo',
         description: 'AI驱动的语言学习助手',
         theme_color: '#ffffff',
         start_url: '/linguago-pwa/',
-        id: '/linguago-pwa/',
-        scope: '/linguago-pwa/',
         icons: [
           {
-            src: 'icons/icon.svg',
-            sizes: 'any',
-            type: 'image/svg+xml',
-            purpose: 'any maskable'
-          }
-        ],
-        display: 'standalone',
-        background_color: '#ffffff',
-        prefer_related_applications: false,
-        categories: ['education', 'productivity']
-      },
-      workbox: {
-        globPatterns: ['**/*.{js,css,html,ico,png,svg,json}'],
-        runtimeCaching: [
+            src: 'icons/icon-192x192.png',
+            sizes: '192x192',
+            type: 'image/png'
+          },
           {
-            urlPattern: /^https:\/\/freakingryan\.github\.io\/linguago-pwa\/.*/i,
-            handler: 'NetworkFirst',
-            options: {
-              cacheName: 'site-cache',
-              networkTimeoutSeconds: 5,
-              expiration: {
-                maxEntries: 100,
-                maxAgeSeconds: 72 * 60 * 60 // 3 days
-              },
-              cacheableResponse: {
-                statuses: [0, 200]
-              }
-            }
+            src: 'icons/icon-512x512.png',
+            sizes: '512x512',
+            type: 'image/png'
           }
         ]
-      },
-      devOptions: {
-        enabled: true,
-        type: 'module',
-        navigateFallback: 'index.html'
       }
     })
   ],
   build: {
-    assetsDir: 'assets',
     rollupOptions: {
       output: {
-        assetFileNames: 'assets/[name]-[hash][extname]',
-        chunkFileNames: 'assets/[name]-[hash].js',
-        entryFileNames: 'assets/[name]-[hash].js',
+        manualChunks: undefined
       }
     },
-    sourcemap: true
-  },
-  server: {
-    port: 5173,
-    strictPort: true,
-    host: true,
-    open: true
-  },
-  preview: {
-    port: 4173,
-    strictPort: true,
-    host: true,
-    open: true
+    sourcemap: false
   }
 })
